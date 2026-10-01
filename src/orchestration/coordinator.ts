@@ -7,6 +7,7 @@ import { AgentManager } from "../agent/agent-manager.js";
 import type { ManagerEvent, Outcome, ResultPayload } from "../agent/agent-handle.js";
 import type { NoteMessage } from "../messaging/message.js";
 import { createSession } from "../pi/session-factory.js";
+import { loadProviderExtensions, type ProviderExtensionHost } from "../pi/provider-extensions.js";
 import {
   createPhaseState, transition, parseCoordinatorDecision, decisionSchemaForPhase,
   type CoordinatorDecision, type CoordinatorEffect, type PhaseState, type Explorer, type Phase, type TaskClass,
@@ -92,6 +93,7 @@ interface RunContext {
   workerIds: string[];
   workerAnswers: Map<string, string>;
   advisors?: AdvisorEngine;
+  providerHost?: Promise<ProviderExtensionHost>;
   cancelled: boolean;
 }
 interface RootCauseClaim {
@@ -110,7 +112,7 @@ function remaining(ctx: RunContext, cap: number): number {
 /** Spawn guard: a cancelled run must not create new sessions after teardown began. */
 async function spawnWorker(ctx: RunContext, options: Parameters<AgentManager["spawn"]>[0]): Promise<void> {
   if (ctx.cancelled) throw new Error("cancelled");
-  await ctx.manager.spawn(options);
+  await ctx.manager.spawn({ ...options, onContextWindow: info => emit(ctx, { type: "context_window", timestamp: Date.now(), actor: options.id, ...info }) });
   if (ctx.cancelled) await ctx.manager.dispose(options.id).catch(() => undefined);
   if (ctx.cancelled) throw new Error("cancelled");
 }
@@ -263,6 +265,7 @@ async function createCoordinator(ctx: RunContext, runtime: ModelRuntime): Promis
     },
   };
   ctx.coordinator = await createSession({
+    onContextWindow: info => emit(ctx, { type: "context_window", timestamp: Date.now(), actor: "coordinator", ...info }),
     baseSystemPrompt: ctx.options.baseSystemPrompt,
     cwd: ctx.options.cwd,
     route: resolveRoute(ctx.options.routes, "coordinator"),
@@ -577,6 +580,11 @@ export async function runOrchestrated(options: RunOptions): Promise<RunReport> {
   const execute = async () => {
     const runtime = options.modelRuntime ?? await ModelRuntime.create();
     if (ctx.cancelled) return;
+    if (options.routes.providerExtensions?.length) {
+      ctx.providerHost = loadProviderExtensions(runtime, options.routes.providerExtensions, { cwd: options.cwd });
+      await ctx.providerHost;
+    }
+    if (ctx.cancelled) return;
     if (options.routes.advisors?.length) {
       const engine = new AdvisorEngine(options.routes.advisors, {
         cwd: options.cwd, problem: options.problem, runtime, routes: options.routes, manager: ctx.manager,
@@ -618,6 +626,7 @@ export async function runOrchestrated(options: RunOptions): Promise<RunReport> {
       ctx.coordinator.dispose();
     }
     await ctx.manager.dispose();
+    (await ctx.providerHost?.catch(() => undefined))?.dispose();
     for (const unsubscribe of ctx.unsubscribers) unsubscribe();
   }
   const status = ctx.state.phase === "DONE" && !ctx.violations.length ? "done" : "failed";

@@ -35,6 +35,10 @@ export interface OrcheRunDetails {
   inputTokens: number;
   outputTokens: number;
   advisorRequests: number;
+  /** Model requests per actor (`coordinator`, worker ids such as `A1`/`V1`, `advisor:<name>`): provider/model → count. */
+  models: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** Effective context window per actor, with the model and whether it was raised above the advertised window. */
+  contextWindows: Readonly<Record<string, { model: string; contextWindow: number; advertisedContextWindow: number; extended: boolean }>>;
   /** The run ended because it was cancelled (by `/orche cancel`, the tool's abort signal or shutdown). */
   cancelled: boolean;
   progress: readonly string[];
@@ -118,17 +122,26 @@ export class OrcheController {
     const runtime = await this.modelRuntime();
     if (config.source.kind === "session" && args.model && !runtime.getModel(args.model.provider, args.model.id)) {
       throw new NoRouteError(
-        `The session model ${sessionModel} cannot be resolved by orche's file-backed model runtime (providers registered by other extensions or in-memory credentials are not shared). Route orche explicitly in ${args.cwd}/.pi/orche.config.json (see docs/pi-package.md).`,
+        `The session model ${sessionModel} cannot be resolved by orche's own model runtime (it does not see providers that other Pi extensions register, nor in-memory credentials). Route orche explicitly in ${args.cwd}/.pi/orche.config.json, and list the provider's Pi package in "providerExtensions" if the provider comes from an extension (see docs/pi-package.md).`,
       );
     }
     const progress: string[] = [];
     const totals = { requests: 0, inputTokens: 0, outputTokens: 0, advisorRequests: 0 };
+    const models: Record<string, Record<string, number>> = {};
+    const contextWindows: Record<string, OrcheRunDetails["contextWindows"][string]> = {};
     const sink = (event: RunEvent) => {
+      if (event.type === "context_window") {
+        const { type: _type, timestamp: _timestamp, actor, ...info } = event;
+        contextWindows[actor] = info;
+      }
       if (event.type === "usage" || event.type === "coordinator_usage" || event.type === "advisor_usage") {
         totals.requests++;
         totals.inputTokens += event.input;
         totals.outputTokens += event.output;
         if (event.type === "advisor_usage") totals.advisorRequests++;
+        const actor = event.type === "usage" ? event.agentId : event.type === "coordinator_usage" ? "coordinator" : `advisor:${event.name}`;
+        const byModel = (models[actor] ??= {});
+        byModel[event.model] = (byModel[event.model] ?? 0) + 1;
       }
       const line = describeProgress(event);
       if (!line) return;
@@ -157,6 +170,8 @@ export class OrcheController {
         ignoredConfigs: config.ignored,
         tasks: report.tasks.length,
         ...totals,
+        models,
+        contextWindows,
         cancelled: signal.aborted && report.status === "failed" && report.summary === "cancelled",
         progress: progress.slice(-PROGRESS_LINES),
       },

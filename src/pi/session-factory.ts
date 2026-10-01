@@ -11,8 +11,9 @@ import {
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createOrcheTools } from "../tools/index.js";
 import { createSpillExtension } from "../tools/spill.js";
+import { withExtendedContext, type ContextWindowInfo } from "./extended-context.js";
 export interface SessionOptions {
-  route: { role: string; model: string; thinking?: ThinkingLevel };
+  route: { role: string; model: string; thinking?: ThinkingLevel; extendedContext?: boolean };
   cwd: string;
   tools?: string[];
   customTools?: ToolDefinition[];
@@ -21,6 +22,8 @@ export interface SessionOptions {
   baseSystemPrompt?: string;
   sessionDir?: string;
   modelRuntime?: ModelRuntime;
+  /** Called once with the effective context window of the session's model. */
+  onContextWindow?: (info: ContextWindowInfo) => void;
 }
 let defaultRuntime: Promise<ModelRuntime> | undefined;
 export async function createSession(
@@ -28,11 +31,13 @@ export async function createSession(
 ): Promise<AgentSession> {
   const runtime = options.modelRuntime ?? await (defaultRuntime ??= ModelRuntime.create());
   const slash = options.route.model.indexOf("/");
-  const model = runtime.getModel(
+  const catalogModel = runtime.getModel(
     options.route.model.slice(0, slash),
     options.route.model.slice(slash + 1),
   );
-  if (!model) throw new Error(`Unknown model: ${options.route.model}`);
+  if (!catalogModel) throw new Error(`Unknown model: ${options.route.model}`);
+  const { model, info } = withExtendedContext(catalogModel, options.route.extendedContext);
+  options.onContextWindow?.(info);
   const loader: ResourceLoader = {
     getExtensions: () => ({
       extensions: [createSpillExtension(options.cwd)],

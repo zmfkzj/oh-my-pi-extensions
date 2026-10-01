@@ -34,18 +34,50 @@ Config discovery, first match wins:
 2. `~/.pi/agent/orche.config.json` (`PI_CODING_AGENT_DIR` is honored).
 3. Otherwise every orche role uses the session's current model and thinking level.
 
-The file has the same format as the repository's `orche.config.json` (`routes`, `default`, optional `advisors`; see [advisor.md](advisor.md)). An existing file that fails validation is an error; there is no silent fallback.
+The file has the same format as the repository's `orche.config.json` (`routes`, `default`, optional `advisors` and `providerExtensions`; see [advisor.md](advisor.md)). An existing file that fails validation is an error; there is no silent fallback.
 
-### Auth limitation
+### Models, auth and providers that extensions register
 
-Orche runs create **one `ModelRuntime.create()` per Pi session** (lazily, reused for every run). That is Pi's public, file-backed runtime: the same `~/.pi/agent` credentials, with Pi's own locking and refresh, exactly like the standalone CLI. The consequence:
+Orche runs use **their own `ModelRuntime`** (created lazily, once per Pi session, with `ModelRuntime.create()`): Pi's public, file-backed runtime, so the same `~/.pi/agent` credentials with Pi's own locking and refresh, exactly like the standalone CLI. Orche does not reach into the session's model registry (no private API).
 
-- Providers or models that **other extensions register into your Pi session** are not visible to orche runs, and neither are credentials that live only in memory (not persisted).
-- If the session's current model cannot be resolved by that runtime (rule 3), the run fails with a message naming `.pi/orche.config.json`. Fix it by routing orche to a model the file-backed runtime knows, e.g. `.pi/orche.config.json`:
+That runtime knows Pi's built-in providers and `models.json`, but not providers that **another Pi extension registers into your session** (for example a gateway package such as `@router-for-me/pi-cliproxyapi-provider`). To use those, list the extension's Pi package in the config:
 
 ```json
-{ "routes": {}, "default": { "model": "openai/gpt-6.1-sol", "thinking": "high" } }
+{
+  "providerExtensions": ["npm:@router-for-me/pi-cliproxyapi-provider"],
+  "default": { "model": "cliproxyapi/gpt-6.1-sol", "thinking": "high" },
+  "routes": { "verifier": { "model": "cliproxyapi/claude-sonnet-5-5", "thinking": "medium" } }
+}
 ```
+
+How it works (Pi's public resource-loading and session APIs only): each source must be **installed at user scope** (`pi install <source>`; it is resolved with `getInstalledPath`, so nothing is downloaded). At the start of every orche run a `DefaultResourceLoader` with `noExtensions: true` and just those packages' paths (the same as `pi --no-extensions -e <package>`) loads **only those packages' extensions**, never the rest of your extension set, and never pi-orche itself (a source whose package name is `pi-orche` is refused to avoid recursion). A hidden, tool-less, in-memory session binds them to orche's runtime, which registers their providers there; it makes no model call and is disposed when the run ends (about one second of start-up). Credentials stay where the provider package keeps them (`~/.pi/agent/auth.json` / its own config), so they must be present there.
+
+Consequences:
+
+- All extension files the package declares are loaded into that hidden session (package granularity), so its own hooks/commands exist there but not in your session.
+- Providers registered by an extension you did **not** list, and credentials that live only in memory, are not visible to orche runs.
+- If a route names a model that does not resolve, the run fails with `Unknown model: <provider>/<id>`. If no orche config exists and the session's current model cannot be resolved (rule 3), the run fails with a message naming `.pi/orche.config.json` and `providerExtensions`.
+- `/orche multi` result details include `models`: model requests per actor (`coordinator`, `A1`, `V1`, `advisor:<name>`), so you can check which model served which role.
+
+### Extended context (`extendedContext`)
+
+The catalog advertises a 272K context window for `gpt-6.1-sol` and `gpt-6-astra`, but the provider accepts much more input (OpenAI documents 922K input of 1.05M total); the 272K figure is the **standard-price threshold**, and input above it is billed at the premium long-context tier: **2x the input price** (visible in the models' cost tiers). Pi uses the advertised window locally: it clamps a request's output budget to `contextWindow - estimated input - 4096`, so past roughly 268K tokens of context the output cap collapses to 1 token, and it drives overflow detection and compaction thresholds. Orche sessions run with compaction off, so without help a long run would simply break at that point.
+
+```json
+{
+  "extendedContext": true,
+  "default": { "model": "cliproxyapi/gpt-6.1-sol", "extendedContext": true },
+  "routes": { "coordinator": { "model": "cliproxyapi/gpt-6-astra", "extendedContext": true },
+              "verifier": { "model": "cliproxyapi/claude-sonnet-5-5", "extendedContext": false } }
+}
+```
+
+- `extendedContext` is a boolean at the top level (default for all routes) and per route/`default` (the route's own value wins; an unlisted role takes `default`'s value, then the top-level value; otherwise off).
+- When on, the session's model is a **copy of the catalog model with `contextWindow` raised to a curated per-model maximum** (a table in `src/pi/extended-context.ts`: `gpt-6.1-sol` and `gpt-6-astra` → 922,000). Nothing is sent to the provider differently (there is no request field for it, in omp either); only Pi's local limits change, and the window is never lowered.
+- **Models without a table entry are unchanged**: `gpt-6-luna`, `gpt-6-sol` and all Claude models keep their advertised window, even with `extendedContext: true`. The table is explicit on purpose; a wrong guess would turn into overflow errors.
+- Applies to every orche session on a matching route: coordinator, workers (implementers, explorers, analysts, verifier) and advisors.
+- The effective window is recorded as a `context_window` event per actor (`{actor, model, contextWindow, advertisedContextWindow, extended}`) and in the `/orche multi` result details as `contextWindows`.
+- Cost: only requests whose input exceeds 272K tokens are affected, and they are billed at the 2x tier.
 
 ## Install, check, remove
 

@@ -20,6 +20,7 @@ export type CoordinatorEvent =
   | { type: "advisor_triggered"; timestamp: number; name: string; target: string; trigger: AdvisorTriggerKind; subject: string; await: boolean }
   | { type: "advisor_result"; timestamp: number; name: string; target: string; trigger: AdvisorTriggerKind; verdict: "ok" | "concern" | "blocker"; notes: readonly AdvisorNote[]; delivered: boolean }
   | { type: "advisor_failed"; timestamp: number; name: string; target: string; trigger: AdvisorTriggerKind; reason: string }
+  | { type: "context_window"; timestamp: number; actor: string; model: string; contextWindow: number; advertisedContextWindow: number; extended: boolean }
   | { type: "advisor_usage"; timestamp: number; name: string; model: string; input: number; output: number; cacheRead: number; cacheWrite: number }
   | { type: "run_finished"; timestamp: number; status: "done" | "failed"; summary: string };
 export type RunEvent = ManagerEvent | CoordinatorEvent;

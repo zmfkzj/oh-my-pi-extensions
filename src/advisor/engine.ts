@@ -240,6 +240,7 @@ export class AdvisorEngine {
         advisor, route: this.routeOf.get(advisor.name)!, runtime: this.host.runtime, cwd: this.host.cwd, prompt,
         timeoutMs: Math.min(advisor.timeoutMs, maxMs), signal: this.abort.signal,
         onUsage: usage => this.host.emit({ type: "advisor_usage", timestamp: Date.now(), name: advisor.name, ...usage }),
+        onContextWindow: info => this.host.emit({ type: "context_window", timestamp: Date.now(), actor: `advisor:${advisor.name}`, ...info }),
       });
       const delivered = await this.deliver(advisor, trigger, subject, recipient, verdict);
       if (!this.disposed) {

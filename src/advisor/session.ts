@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { ModelRuntime, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createSession } from "../pi/session-factory.js";
+import type { ContextWindowInfo } from "../pi/extended-context.js";
 import { READ_ONLY_TOOL_NAMES } from "../tools/index.js";
 import type { ModelRoute } from "../orchestration/routing.js";
 import type { AdvisorNote } from "../orchestration/events.js";
@@ -20,6 +21,7 @@ export interface AdvisorRun {
   timeoutMs: number;
   signal: AbortSignal;
   onUsage: (usage: AdvisorUsage) => void;
+  onContextWindow: (info: ContextWindowInfo) => void;
 }
 /** Advisor sessions are short by construction: one prompt, read-only tools, a hard turn cap. */
 export const ADVISOR_MAX_TURNS = 8;
@@ -72,6 +74,7 @@ export async function runAdvisorSession(run: AdvisorRun): Promise<AdvisorVerdict
     cwd: run.cwd,
     route: run.route,
     modelRuntime: run.runtime,
+    onContextWindow: run.onContextWindow,
     tools: [...READ_ONLY_TOOL_NAMES, "advisor_verdict"],
     customTools: [verdictTool(run.advisor, value => { captured.verdict ??= value; })],
     instructions: advisorInstructions(run.advisor),
