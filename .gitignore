@@ -2,3 +2,6 @@ node_modules/
 results/**/tmp/
 *.tsbuildinfo
 .env
+
+# Benchmark and experiment outputs: kept locally, not versioned.
+results/
