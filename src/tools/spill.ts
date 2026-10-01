@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import {
   createSyntheticSourceInfo,
   type Extension,
   type ToolResultEvent,
-  type ToolResultEventResult,
 } from "@earendil-works/pi-coding-agent";
 
 export const SPILL_MAX_CHARS = 12_000;
@@ -66,7 +66,17 @@ async function fullBashOutput(details: unknown): Promise<{ file: string; text: s
 }
 
 /** Spill an over-threshold tool result: keep head+tail inline, store the full text under .orche/artifacts. */
-export async function spillToolResult(cwd: string, event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
+export interface SpillEvent {
+  toolName: string;
+  content: (TextContent | ImageContent)[];
+  details?: unknown;
+}
+export interface SpillResult {
+  content: (TextContent | ImageContent)[];
+  details?: unknown;
+}
+
+export async function spillToolResult(event: SpillEvent, cwd: string): Promise<SpillResult | undefined> {
   if (EXEMPT_TOOLS.includes(event.toolName)) return undefined;
   const texts = event.content.flatMap((part) => (part.type === "text" ? [part.text] : []));
   const rest = event.content.filter((part) => part.type !== "text");
@@ -92,7 +102,7 @@ export async function spillToolResult(cwd: string, event: ToolResultEvent): Prom
 /** Session extension applying {@link spillToolResult} to every tool result (public `tool_result` hook). */
 export function createSpillExtension(cwd: string): Extension {
   const path = "<orche:spill>";
-  const handler = (event: ToolResultEvent) => spillToolResult(cwd, event);
+  const handler = (event: ToolResultEvent) => spillToolResult(event, cwd);
   return {
     path,
     resolvedPath: path,

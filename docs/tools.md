@@ -18,7 +18,7 @@ The model sees exactly one `read` and one `edit`: custom tools registered under 
 
 ## Anchored read/edit
 
-`read` prints every line as `12#a3f|text`. The tag is the low 12 bits of an FNV-1a hash of the line's exact content (3 hex digits); the line number plus tag pins a line to the content that was read. `edit` takes anchors verbatim (`12#a3f`; a pasted `12#a3f|text` is tolerated, and inserts also accept `BOF`/`EOF`).
+`read` prints every line as `12#0123456789abcdef|text`. The tag is the first 64 bits of the SHA-256 of the line's exact content (16 hex chars); the line number plus tag pins a line to the content that was read. `edit` takes anchors verbatim (`12#0123456789abcdef`; a pasted `12#<tag>|text` line is tolerated, and inserts also accept `BOF`/`EOF`).
 
 - All edits in one call address one snapshot of the file (line numbers are *not* shifted by earlier edits in the list) and are applied atomically. Overlapping ranges are rejected.
 - Every anchor is validated first. A stale or out-of-range anchor aborts the whole call with no change and the error prints the current lines (with fresh tags) around each bad anchor.
@@ -26,7 +26,7 @@ The model sees exactly one `read` and one `edit`: custom tools registered under 
 - CRLF, BOM and a missing trailing newline are preserved; edits run inside Pi's per-file mutation queue.
 - An edit that leaves the file byte-identical is rejected.
 
-Tag collisions (1/4096 per changed line that keeps the same number) are the accepted residual risk of short tags.
+A line changed since the read keeps its anchor only on a 64-bit hash collision (about 2^-64), so a matching tag is treated as proof the content is unchanged. Identical lines share a tag; the line number disambiguates them. The tag adds 17 characters (`#` + 16 hex) to every line of read output.
 
 ## ast tools
 
@@ -50,6 +50,7 @@ An extension (`src/tools/spill.ts`, registered by `createSession`) hooks `tool_r
 - Pi's bash already keeps only the last 2000 lines/50KB and writes the real full output to a temp file; for that case the artifact is a copy of Pi's temp file (up to 32MB are used for the inline preview, bigger files keep Pi's tail as preview) and Pi's trailing `Command exited with code N` / abort / timeout status line is carried over. `isError` is preserved.
 - If saving the artifact fails the result is still truncated and says so.
 - The exported thresholds are `SPILL_MAX_CHARS` and `SPILL_MAX_LINES`.
+- Reusable entry point: `spillToolResult(event: { toolName, content, details? }, cwd): Promise<{ content, details? } | undefined>` (`undefined` = leave the result unchanged); `createSpillExtension(cwd)` is a thin `tool_result` wrapper over it, so Pi extensions can call it with the event they receive.
 
 ## Base prompt switch
 

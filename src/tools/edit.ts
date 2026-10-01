@@ -24,7 +24,7 @@ const editSchema = Type.Object({
         { description: "replace/delete the lines at..to; insert text after/before the line at" },
       ),
       at: Type.String({
-        description: "Anchor LINE#TAG exactly as printed by read (e.g. 12#a3f). Inserts also accept BOF / EOF.",
+        description: "Anchor LINE#TAG exactly as printed by read (a line number, #, 16 hex chars; e.g. 12#0123456789abcdef). Inserts also accept BOF / EOF.",
       }),
       to: Type.Optional(
         Type.String({ description: "Last LINE#TAG of the range for replace/delete (default: same as at)" }),
@@ -49,7 +49,7 @@ function resolveAnchor(label: string, value: string | undefined, lines: string[]
   if (value === undefined) return undefined;
   const parsed = parseAnchor(value);
   if (!parsed) {
-    problems.push(`${label} "${value}" is not a LINE#TAG anchor (copy it from read output, e.g. 12#a3f)`);
+    problems.push(`${label} "${value}" is not a LINE#TAG anchor (copy it from read output)`);
     return undefined;
   }
   return checkAnchor(label, parsed, lines, problems);

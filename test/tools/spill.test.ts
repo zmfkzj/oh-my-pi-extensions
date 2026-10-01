@@ -31,7 +31,7 @@ describe("artifact spill", () => {
 
     expect(small!.text.trim()).toBe("hi");
     expect(page!.isError).toBe(false);
-    expect(page!.text).toMatch(/^39999#[0-9a-f]{3}\|39999\n40000#[0-9a-f]{3}\|40000/);
+    expect(page!.text).toMatch(/^39999#[0-9a-f]{16}\|39999\n40000#[0-9a-f]{16}\|40000/);
     expect(page!.text).not.toContain("Output truncated");
     expect((await readdir(join(cwd, ".orche/artifacts"), { all: true } as never)).filter((n) => n.endsWith(".txt"))).toHaveLength(2);
   });
@@ -62,5 +62,18 @@ describe("previewText", () => {
     const preview = previewText("x".repeat(100_000))!;
     expect(preview.length).toBeLessThan(3_000);
     expect(previewText("y\n".repeat(400))).toContain("lines omitted");
+  });
+});
+
+describe("spillToolResult export", () => {
+  it("returns undefined for small results and a truncated result with artifact for large ones", async () => {
+    const { spillToolResult } = await import("../../src/tools/spill.js");
+    const cwd = await tempWorkspace();
+    expect(await spillToolResult({ toolName: "grep", content: [{ type: "text", text: "small" }] }, cwd)).toBeUndefined();
+    const big = Array.from({ length: 2000 }, (_, i) => `row ${i}`).join("\n");
+    const out = await spillToolResult({ toolName: "grep", content: [{ type: "text", text: big }] }, cwd);
+    const text = (out!.content[0] as { text: string }).text;
+    expect(text).toContain("lines omitted from the middle");
+    expect(await readFile(join(cwd, artifactPath(text)!), "utf8")).toBe(big);
   });
 });

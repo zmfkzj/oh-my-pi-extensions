@@ -13,13 +13,21 @@ npx tsx src/cli.ts --cwd /path/to/project --problem-file ISSUE.md --config orche
 
 The CLI prints a JSON final report and exits nonzero on failure. `--route` is repeatable; provider/model/thinking routing belongs exclusively in configuration. All default roles use `openai/gpt-6.1-sol` at `high`. A route config with `routes: {}` and a `default` covers every role, including `coordinator`, `analyst`, `implementer`, `explorer-path`, `explorer-cause`, `explorer-repro`, and `verifier`.
 
-Programmatic entry point: `runOrchestrated({problem, cwd, routes, sink?, modelRuntime?, limits?, baseSystemPrompt?})`. `baseSystemPrompt` replaces Pi's default base prompt in the coordinator and every worker session (advisors and judges keep their own); absent = Pi default. JSONL events include worker usage, coordinator usage, advisor triggers/results/usage, messages, assignment outcomes, phase changes, backlog ownership, and verification. Reports include ownership violations as decomposition failures, not silently approved writes. The audit observes Pi edit/write tools; shell-mediated writes are not intercepted. Workers must respect ownership themselves—there are no locks.
+Programmatic entry point: `runOrchestrated({problem, cwd, routes, sink?, modelRuntime?, limits?, baseSystemPrompt?, signal?})`. `signal` cancels the run: sessions are stopped and disposed and a failed report with summary `cancelled` is returned. `baseSystemPrompt` replaces Pi's default base prompt in the coordinator and every worker session (advisors and judges keep their own); absent = Pi default. JSONL events include worker usage, coordinator usage, advisor triggers/results/usage, messages, assignment outcomes, phase changes, backlog ownership, and verification. Reports include ownership violations as decomposition failures, not silently approved writes. The audit observes Pi edit/write tools; shell-mediated writes are not intercepted. Workers must respect ownership themselves—there are no locks.
 `RunReport.taskClass` is `answer`, `change`, or `diagnose_fix` (`unclassified` only if classification fails); `RunReport.answer` is the full user-facing answer or a concise change/verification report, in the user's language. `request_classified` events record class, worker count, language and reason.
 For read-only requests, the coordinator can approve `answer_from_worker` to pass an existing complete worker answer through unchanged; it only generates full answer text when substantive edits or multi-worker synthesis are needed.
 During implementation/fixes, file ownership is per worker across all of that worker's current backlog tasks, not just its active task. Writes during exploration or proposal collection, and implementation writes to unowned or another worker's files, are decomposition failures. Violation events identify every backlog task whose file area contains the path.
 Ownership accepts concrete repository-relative files and recursive directory areas: `src/`, `src/**` and `src/**/*` all canonicalize to `src/` before overlap validation and write auditing. Other glob patterns are rejected during backlog validation rather than misinterpreted as literal file names.
 
 Default overall budget: 600 seconds. Unless individually overridden, exploration gets one third of the configured overall budget, each assignment wait can use the remaining overall budget, and each coordinator decision gets half of the overall budget (300 seconds at the default). Every cap is clamped to the time remaining in the run; explicit finite caps are honored within that bound. For a 900-second task this means exploration 300 seconds, decisions up to 450 seconds, and assignments bounded by the remaining task time. Decision repairs remain capped at two re-prompts and verification at one fix round. All sessions are disposed in `finally`. Pi abort requires tool cooperation; arbitrary JavaScript tools ignoring abort cannot be forcibly killed by this wrapper. There is no provider fallback.
+
+### Install into Pi
+
+```sh
+pi install /path/to/pi-orche     # after `npm install` here; uninstall with: pi remove /path/to/pi-orche
+```
+
+Every normal `pi` session then has anchored `read`/`edit` (replacing Pi's), `find`, `ast_search`, `ast_rewrite`, `diagnostics`, `grep`, `ls`, long-output spill, `/orche single <PROMPT>` (the current session's agent handles the prompt as a normal user turn with these tools, no orchestration), `/orche multi <PROMPT>` (runs the multi-agent orchestrator on the session cwd and posts the result into the conversation; `/orche cancel` stops the active multi run or `orche_run` call; any other form prints `Usage: /orche single|multi <PROMPT> | /orche cancel` and does nothing), and an `orche_run` tool the main model can call (always multi). Model routing comes from `.pi/orche.config.json`, `~/.pi/agent/orche.config.json`, or the session's current model. Details, limitations and the auth model: [docs/pi-package.md](docs/pi-package.md).
 
 ## Architecture
 
@@ -29,6 +37,7 @@ Default overall budget: 600 seconds. Unless individually overridden, exploration
 - `src/orchestration/phases.ts`, `backlog.ts`, `routing.ts`: pure transitions, proposal deduplication, ownership/dependency validation and model routing.
 - `src/orchestration/coordinator.ts`, `prompts.ts`, `events.ts`: small LLM-driven phase loop, structured decision tools, worker protocols and shared event contract.
 - `src/advisor/`: configurable multi-advisor (triggers, domains, budgets) with the OMP plan-review and verification-audit roles as presets; see [docs/advisor.md](docs/advisor.md).
+- `src/extension/`: the Pi package entry (`/orche`, `orche_run`, tool replacement, spill hook), config discovery and the single-run controller; see [docs/pi-package.md](docs/pi-package.md).
 - `src/eval/`: visible-only problem-A workspaces, isolated hidden grading, fork-join baseline, metrics and benchmark runner. Hidden grading data never enters worker prompts or workspaces.
 - `test/`: pure tests plus deterministic real-AgentSession faux-provider lifecycle and coordinator regressions.
 

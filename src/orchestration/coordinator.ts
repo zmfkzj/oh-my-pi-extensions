@@ -61,6 +61,8 @@ export interface RunOptions {
   limits?: Partial<RunLimits>;
   /** Replaces Pi's default base system prompt for the coordinator and every worker session (not advisors); roles are still appended. */
   baseSystemPrompt?: string;
+  /** Aborting cancels the run: sessions are stopped and disposed and a failed report with summary "cancelled" is returned. */
+  signal?: AbortSignal;
 }
 export interface RunReport {
   status: "done" | "failed";
@@ -90,6 +92,7 @@ interface RunContext {
   workerIds: string[];
   workerAnswers: Map<string, string>;
   advisors?: AdvisorEngine;
+  cancelled: boolean;
 }
 interface RootCauseClaim {
   agentId: string;
@@ -103,6 +106,13 @@ function emit(ctx: RunContext, event: CoordinatorEvent): void {
 }
 function remaining(ctx: RunContext, cap: number): number {
   return Math.max(0, Math.min(cap, ctx.limits.overallMs - (Date.now() - ctx.startedAt)));
+}
+/** Spawn guard: a cancelled run must not create new sessions after teardown began. */
+async function spawnWorker(ctx: RunContext, options: Parameters<AgentManager["spawn"]>[0]): Promise<void> {
+  if (ctx.cancelled) throw new Error("cancelled");
+  await ctx.manager.spawn(options);
+  if (ctx.cancelled) await ctx.manager.dispose(options.id).catch(() => undefined);
+  if (ctx.cancelled) throw new Error("cancelled");
 }
 async function bounded<T>(ctx: RunContext, operation: Promise<T>, cap: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -151,12 +161,14 @@ async function decide(ctx: RunContext, context: unknown, expectedType?: Coordina
 async function decideOnce(ctx: RunContext, context: unknown, expectedType?: CoordinatorDecision["type"], reconsideration = ""): Promise<CoordinatorDecision> {
   let feedback = reconsideration;
   for (let attempt = 0; attempt <= ctx.limits.decisionRepairs; attempt++) {
+    if (ctx.cancelled) throw new Error("cancelled");
     ctx.decisionSet = false;
     ctx.decisionValue = undefined;
     const unreadNotes = ctx.mainNotes.splice(0).map(({ from, content, signal }) => ({ from, content, signal }));
     const decisionContext = unreadNotes.length ? { context, mainNotes: unreadNotes } : context;
     const prompt = `Decision phase ${ctx.state.phase}. Reply in the user's language (${ctx.state.language ?? "detect from request"}; Korean requests require Korean answers). Call coordinator_decision alone with arguments {"decision":<object matching schema>}. Schema: ${JSON.stringify(decisionSchemaForPhase(ctx.state.phase, ctx.state.taskClass))}\nContext: ${JSON.stringify(decisionContext)}\n${feedback}`;
     await bounded(ctx, ctx.coordinator!.prompt(prompt), ctx.limits.decisionMs, "Coordinator decision");
+    if (ctx.cancelled) throw new Error("cancelled");
     try {
       if (!ctx.decisionSet) throw new Error("No decision tool called");
       const decision = parseCoordinatorDecision(ctx.decisionValue, ctx.state.phase, ctx.state.taskClass);
@@ -259,6 +271,11 @@ async function createCoordinator(ctx: RunContext, runtime: ModelRuntime): Promis
     customTools: [decisionTool, planTool],
     instructions: "You are the coordinator. Read-only. First classify the request; do not mistake explanation, review or no-modification requests for code changes. Decisions must use structured tools alone. Reply in the user's language; Korean requests require Korean answers (한국어). Accept only evidenced causes. Merge minimal tasks, disjoint ownership, explicit dependencies and the SAME worker owners. Require actual verification for changes; answers must be grounded in read-only worker evidence. Never access hidden grading data.",
   });
+  if (ctx.cancelled) {
+    ctx.coordinator.dispose();
+    ctx.coordinator = undefined;
+    throw new Error("cancelled");
+  }
   ctx.unsubscribers.push(ctx.coordinator.subscribe(event => {
     if (event.type !== "message_end" || event.message.role !== "assistant") return;
     const usage = event.message.usage;
@@ -305,7 +322,7 @@ async function classifyRequest(ctx: RunContext): Promise<void> {
 }
 async function spawnChangeWorkers(ctx: RunContext, runtime: ModelRuntime): Promise<void> {
   for (const id of ctx.workerIds) {
-    await ctx.manager.spawn({
+    await spawnWorker(ctx, {
       id, role: "implementer", cwd: ctx.options.cwd, baseSystemPrompt: ctx.options.baseSystemPrompt, tools: [...WORKER_TOOL_NAMES],
       route: resolveRoute(ctx.options.routes, "implementer"), modelRuntime: runtime,
       instructions: `${workerInstructions}\nYour id is ${id}. User request: ${ctx.options.problem}\nReply in the user's language (${ctx.state.language}).`,
@@ -315,7 +332,7 @@ async function spawnChangeWorkers(ctx: RunContext, runtime: ModelRuntime): Promi
 }
 async function runAnswer(ctx: RunContext, runtime: ModelRuntime): Promise<void> {
   for (const id of ctx.workerIds) {
-    await ctx.manager.spawn({
+    await spawnWorker(ctx, {
       id, role: "analyst", cwd: ctx.options.cwd,
       route: resolveRoute(ctx.options.routes, "analyst"), modelRuntime: runtime,
       tools: [...READ_ONLY_TOOL_NAMES], baseSystemPrompt: ctx.options.baseSystemPrompt,
@@ -347,7 +364,7 @@ async function planAndSpawnExplorers(ctx: RunContext, runtime: ModelRuntime): Pr
   }
   for (const [index, id] of ctx.workerIds.entries()) {
     const role = explorerRoles[index]!;
-    await ctx.manager.spawn({
+    await spawnWorker(ctx, {
       id, role, cwd: ctx.options.cwd, baseSystemPrompt: ctx.options.baseSystemPrompt, tools: [...WORKER_TOOL_NAMES],
       route: resolveRoute(ctx.options.routes, role),
       modelRuntime: runtime,
@@ -498,7 +515,7 @@ async function mergeExecuteAndVerify(ctx: RunContext, runtime: ModelRuntime, pro
     problem: ctx.options.problem, proposals: dedupeProposals(proposals), rootCause: ctx.state.rootCause, owners: ctx.workerIds,
     requirement: "Merge into nonempty pending tasks; reuse the selected owners, disjoint files, dependsOn IDs. Ownership files must be concrete repository-relative paths or recursive directory prefixes ending / (directory/** is also accepted and canonicalized). No other ownership globs. Include every file area the requested change must touch. Plan the minimal requested changes with appropriate regression coverage; reuse existing tests when sufficient. Documentation only if the user's problem asks for it. Do not investigate root causes for clear change requests.",
   };
-  await ctx.manager.spawn({
+  await spawnWorker(ctx, {
     id: "V1", role: "verifier", cwd: ctx.options.cwd,
     route: resolveRoute(ctx.options.routes, "verifier"), modelRuntime: runtime,
     instructions: `${workerInstructions}\nReply in the user's language (${ctx.state.language}).`, tools: [...READ_ONLY_TOOL_NAMES, "bash"], baseSystemPrompt: ctx.options.baseSystemPrompt,
@@ -546,12 +563,20 @@ export async function runOrchestrated(options: RunOptions): Promise<RunReport> {
     bufferedNoteIds: new Set(),
     workerIds: [],
     workerAnswers: new Map(),
+    cancelled: false,
   };
   ctx.unsubscribers.push(ctx.manager.subscribe(event => forwardManagerEvent(ctx, event)));
   emit(ctx, { type: "run_started", timestamp: startedAt, mode: "orchestrated", problem: options.problem });
   emit(ctx, { type: "phase_changed", timestamp: startedAt, from: "INIT", to: "EXPLORE" });
-  try {
+  const cancellation = Promise.withResolvers<never>();
+  const onAbort = () => {
+    ctx.cancelled = true;
+    cancellation.reject(new Error("cancelled"));
+  };
+  if (options.signal?.aborted) onAbort(); else options.signal?.addEventListener("abort", onAbort, { once: true });
+  const execute = async () => {
     const runtime = options.modelRuntime ?? await ModelRuntime.create();
+    if (ctx.cancelled) return;
     if (options.routes.advisors?.length) {
       const engine = new AdvisorEngine(options.routes.advisors, {
         cwd: options.cwd, problem: options.problem, runtime, routes: options.routes, manager: ctx.manager,
@@ -562,6 +587,7 @@ export async function runOrchestrated(options: RunOptions): Promise<RunReport> {
         engine.start();
       }
     }
+    if (ctx.cancelled) return;
     await createCoordinator(ctx, runtime);
     await classifyRequest(ctx);
     if (ctx.state.taskClass === "answer") {
@@ -575,11 +601,17 @@ export async function runOrchestrated(options: RunOptions): Promise<RunReport> {
       const proposals = await collectProposals(ctx);
       await mergeExecuteAndVerify(ctx, runtime, proposals);
     }
+  };
+  try {
+    await Promise.race([execute(), cancellation.promise]);
+    if (ctx.cancelled) throw new Error("cancelled");
   } catch (error) {
     if (ctx.state.phase !== "FAILED" && ctx.state.phase !== "DONE") {
-      apply(ctx, { type: "fail", reason: String(error) });
+      apply(ctx, { type: "fail", reason: ctx.cancelled ? "cancelled" : String(error) });
     }
   } finally {
+    options.signal?.removeEventListener("abort", onAbort);
+    ctx.cancelled = true;
     await ctx.advisors?.dispose();
     if (ctx.coordinator) {
       await ctx.coordinator.abort();

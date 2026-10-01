@@ -39,7 +39,7 @@ describe("anchored read/edit on a real session", () => {
       }),
     ]);
     expect(results.map((r) => r.isError)).toEqual([false, false, false]);
-    expect(results[0]!.text).toMatch(/^1#[0-9a-f]{3}\|one\n2#[0-9a-f]{3}\|two/);
+    expect(results[0]!.text).toMatch(/^1#[0-9a-f]{16}\|one\n2#[0-9a-f]{16}\|two/);
     expect(await readFile(file, "utf8")).toBe("one\nTWO\n2.5\nbetween\nthree\nfive\n");
   });
 
@@ -72,6 +72,37 @@ describe("anchored read/edit on a real session", () => {
     expect(await readFile(file, "utf8")).toBe("alpha\nBETA CHANGED\ngamma\n");
   });
 
+  it("rejects an anchor whose line was changed by one character at the same line number", async () => {
+    const cwd = await tempWorkspace();
+    const file = join(cwd, "s.txt");
+    await writeFile(file, "keep\nconst total = 100;\nkeep2\n");
+    const results = await runToolScript(cwd, ["read", "edit"], [
+      () => ({ name: "read", args: { path: "s.txt" } }),
+      (read) => {
+        writeFileSync(file, "keep\nconst total = 101;\nkeep2\n");
+        return { name: "edit", args: { path: "s.txt", edits: [{ op: "replace", at: anchorOf(read!.text, "const total = 100;"), text: "const total = 0;" }] } };
+      },
+    ]);
+    expect(results[1]!.isError).toBe(true);
+    expect(results[1]!.text).toContain("stale");
+    expect(results[1]!.text).toContain("|const total = 101;");
+    expect(await readFile(file, "utf8")).toBe("keep\nconst total = 101;\nkeep2\n");
+  });
+
+  it("rejects 12-bit style short tags and tags of another line", async () => {
+    const cwd = await tempWorkspace();
+    await writeFile(join(cwd, "t.txt"), "x\ny\n");
+    const results = await runToolScript(cwd, ["read", "edit"], [
+      () => ({ name: "read", args: { path: "t.txt" } }),
+      (read) => ({ name: "edit", args: { path: "t.txt", edits: [{ op: "delete", at: anchorOf(read!.text, "x").slice(0, 5) }] } }),
+      (_, all) => ({ name: "edit", args: { path: "t.txt", edits: [{ op: "delete", at: "1#" + anchorOf(all[0]!.text, "y").split("#")[1] }] } }),
+    ]);
+    expect(results[1]!.isError).toBe(true);
+    expect(results[1]!.text).toContain("is not a LINE#TAG anchor");
+    expect(results[2]!.isError).toBe(true);
+    expect(results[2]!.text).toContain("stale");
+  });
+
   it("rejects overlapping edits and out-of-range anchors; keeps CRLF", async () => {
     const cwd = await tempWorkspace();
     const file = join(cwd, "w.txt");
@@ -88,7 +119,7 @@ describe("anchored read/edit on a real session", () => {
           ],
         },
       }),
-      () => ({ name: "edit", args: { path: "w.txt", edits: [{ op: "delete", at: "99#abc" }] } }),
+      () => ({ name: "edit", args: { path: "w.txt", edits: [{ op: "delete", at: "99#0123456789abcdef" }] } }),
       (_, all) => ({
         name: "edit",
         args: { path: "w.txt", edits: [{ op: "replace", at: anchorOf(all[0]!.text, "b"), text: "B" }] },
@@ -108,6 +139,6 @@ describe("anchored read/edit on a real session", () => {
     const results = await runToolScript(cwd, ["read"], [
       () => ({ name: "read", args: { path: "n.txt", offset: 3, limit: 2 } }),
     ]);
-    expect(results[0]!.text).toMatch(/^3#[0-9a-f]{3}\|l3\n4#[0-9a-f]{3}\|l4\n\n\[Showing lines 3-4 of 10\. Use offset=5 to continue\.\]$/);
+    expect(results[0]!.text).toMatch(/^3#[0-9a-f]{16}\|l3\n4#[0-9a-f]{16}\|l4\n\n\[Showing lines 3-4 of 10\. Use offset=5 to continue\.\]$/);
   });
 });

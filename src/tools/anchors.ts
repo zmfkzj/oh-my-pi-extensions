@@ -1,13 +1,11 @@
+import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 
-/** Short content tag: with the line number it pins a line to the content that was read. */
+export const TAG_LENGTH = 16;
+
+/** 64-bit content tag (first 8 bytes of SHA-256, 16 hex chars): with the line number it pins a line to the content that was read. */
 export function lineTag(line: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < line.length; i++) {
-    hash ^= line.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return ((hash >>> 0) & 0xfff).toString(16).padStart(3, "0");
+  return createHash("sha256").update(line).digest("hex").slice(0, TAG_LENGTH);
 }
 
 export function formatAnchor(lineNumber: number, line: string): string {
@@ -25,9 +23,9 @@ export interface Anchor {
   tag: string;
 }
 
-const ANCHOR = /^\s*(\d+)\s*#\s*([0-9a-f]{3})(?:\s*\|.*)?$/is;
+const ANCHOR = new RegExp(`^\\s*(\\d+)\\s*#\\s*([0-9a-f]{${TAG_LENGTH}})(?:\\s*\\|.*)?$`, "is");
 
-/** Accepts `12#a3f`, and tolerates a whole copied `12#a3f|text` line. */
+/** Accepts `12#<tag>`, and tolerates a whole copied `12#<tag>|text` line. */
 export function parseAnchor(value: string): Anchor | undefined {
   const match = ANCHOR.exec(value);
   if (!match) return undefined;
