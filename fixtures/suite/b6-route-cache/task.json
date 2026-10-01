@@ -1,0 +1,16 @@
+{
+  "id": "b6-route-cache",
+  "title": "route cache",
+  "category": "performance",
+  "language": "en",
+  "instruction": "The router compiles route regular expressions on every request. Make route matching stop recompiling registered routes when requests arrive, while preserving methods, exact paths, parameter decoding and registration order. The public stats.compilations counter must continue counting actual compilations. Routes registered after earlier requests must also work. No dependencies or timing-based optimizations.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

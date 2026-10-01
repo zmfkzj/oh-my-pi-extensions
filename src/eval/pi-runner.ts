@@ -1,0 +1,214 @@
+import { createHash } from 'node:crypto';
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ModelRuntime } from '@earendil-works/pi-coding-agent';
+import { Type, type Static } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
+import { runOrchestrated } from '../orchestration/coordinator.js';
+import { createSession } from '../pi/session-factory.js';
+import { runProcess, runnerResultSchema, type RunnerOptions, type RunnerResult, type RunnerUsage, type SessionUsage, type UsageTotals, type UnknownUsageRequest } from './omp-runner.js';
+
+export const piModel = 'openai/gpt-6.1-sol';
+export const piRoutes = { routes: Object.fromEntries(['coordinator','explorer-path','explorer-cause','explorer-repro','verifier','implementer','answer'].map(role => [role, { model: piModel, thinking: 'high' as const }])), default: { model: piModel, thinking: 'high' as const } };
+
+/** Prompt-study arms. C0 is Pi's default base prompt; C1/C2 replace it for the coordinator and every worker. */
+export const promptVariants: Readonly<Record<string, string | null>> = { C0: null, C1: 'prompts/c1-engineering-discipline.md', C2: 'prompts/c2-omp-derived.md' };
+export interface PiRunnerOptions extends RunnerOptions { promptVariant?: string }
+export interface LoadedPromptVariant { name: string; file: string | null; text: string | undefined; sha256: string | null; chars: number }
+export async function loadPromptVariant(name: string): Promise<LoadedPromptVariant> {
+  if (!Object.hasOwn(promptVariants, name)) throw new Error(`Unknown prompt variant ${name}; expected ${Object.keys(promptVariants).join(', ')}`);
+  const file = promptVariants[name]!;
+  if (file === null) return { name, file: null, text: undefined, sha256: null, chars: 0 };
+  const text = await readFile(fileURLToPath(new URL(`../../${file}`, import.meta.url)), 'utf8');
+  return { name, file, text, sha256: sha(text), chars: text.length };
+}
+const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const itemText = (content: unknown): string => typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => part && typeof part === 'object' && 'text' in part && typeof part.text === 'string' ? part.text : '').join('') : '';
+/** What actually went over the wire: leading system/developer text, all system/developer text anywhere in the input, and tool definitions (top-level `tools` plus `additional_tools` input items). */
+export function summarizePayloadSystem(payload: unknown): { system: string; systemSha256: string; systemChars: number; allSystem: string; allSystemSha256: string; inputShape: string[]; toolNames: string[]; toolsSha256: string } {
+  const body = payload && typeof payload === 'object' ? payload as { instructions?: unknown; input?: unknown; tools?: unknown } : {};
+  const parts: string[] = typeof body.instructions === 'string' ? [body.instructions] : [];
+  const everywhere = [...parts], shape: string[] = [], declared: unknown[] = Array.isArray(body.tools) ? [...body.tools] : [];
+  let leading = true;
+  if (Array.isArray(body.input)) for (const [index, item] of body.input.entries()) {
+    const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    if (index < 6) shape.push(`${String(record.type ?? '')}:${String(record.role ?? '')}`);
+    if (record.type === 'additional_tools' && Array.isArray(record.tools)) declared.push(...record.tools);
+    const isSystem = (record.role === 'system' || record.role === 'developer') && record.type !== 'additional_tools';
+    if (isSystem) everywhere.push(itemText(record.content));
+    if (leading && isSystem) parts.push(itemText(record.content)); else leading = false;
+  }
+  const system = parts.join('\n'), allSystem = everywhere.join('\n');
+  const tools = declared.map(tool => {
+    const record = tool as { name?: unknown; function?: { name?: unknown } };
+    return { name: String(record.name ?? record.function?.name ?? ''), definition: JSON.stringify(tool) };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  return { system, systemSha256: sha(system), systemChars: system.length, allSystem, allSystemSha256: sha(allSystem), inputShape: shape, toolNames: tools.map(tool => tool.name), toolsSha256: sha(tools.map(tool => tool.definition).join('\n')) };
+}
+const payloadSchema = Type.Object({ model: Type.String(), reasoning: Type.Optional(Type.Object({ effort: Type.Optional(Type.String()) })) });
+const recordSchema = Type.Object({ type: Type.String(), id: Type.Number(), model: Type.String(), effort: Type.Union([Type.String(), Type.Null()]), usage: Type.Optional(Type.Object({ input: Type.Number(), output: Type.Number(), cacheRead: Type.Number(), cacheWrite: Type.Number() })), sessionId: Type.String(), stopReason: Type.Optional(Type.String()) });
+type PiRequestRecord = Static<typeof recordSchema>;
+
+/** Observe the existing public runtime; leave authentication, provider execution and payloads untouched. */
+export async function observedPiRuntime(traceFile: string, capture?: { systemDir: string }) {
+  const runtime = await ModelRuntime.create();
+  const streamSimple = runtime.streamSimple.bind(runtime);
+  let serial = 0;
+  const pending = new Set<Promise<void>>(), seenCalls = new Set<string>();
+  await writeFile(traceFile, '');
+  if (capture) await mkdir(capture.systemDir, { recursive: true });
+  runtime.streamSimple = (model, context, options) => {
+    const id = ++serial;
+    let actualModel = `${model.provider}/${model.id}`, effort: string | null = null;
+    const onPayload = options?.onPayload;
+    const nativeFetch = options?.fetch ?? globalThis.fetch;
+    const onResponse = options?.onResponse;
+    const stream = streamSimple(model, context, {
+      ...options,
+      transport: 'sse',
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        appendFileSync(traceFile, JSON.stringify({ type: 'provider_endpoint', id, model: actualModel, effort, sessionId: options?.sessionId ?? `pi-request-${id}`, host: url.host, path: url.pathname }) + '\n');
+        return nativeFetch(input, init);
+      },
+      onResponse: async (response, physicalModel) => {
+        appendFileSync(traceFile, JSON.stringify({ type: 'provider_http', id, model: `${physicalModel.provider}/${physicalModel.id}`, effort, sessionId: options?.sessionId ?? `pi-request-${id}`, status: response.status }) + '\n');
+        await onResponse?.(response, physicalModel);
+      },
+      onPayload: async (payload, physicalModel) => {
+        const replacement = await onPayload?.(payload, physicalModel);
+        const actual = replacement ?? payload;
+        if (!Value.Check(payloadSchema, actual)) throw new Error('Pi payload capture cannot identify model/effort');
+        actualModel = `${physicalModel.provider}/${actual.model}`;
+        effort = actual.reasoning?.effort ?? null;
+        const wire = capture ? summarizePayloadSystem(actual) : null;
+        if (capture && wire) { writeFileSync(join(capture.systemDir, `${wire.systemSha256}.txt`), wire.system); writeFileSync(join(capture.systemDir, `${wire.allSystemSha256}.txt`), wire.allSystem); }
+        if (capture) for (const item of 'input' in actual && Array.isArray(actual.input) ? actual.input : []) {
+          if (!item || typeof item !== 'object' || !('type' in item) || !('call_id' in item) || typeof item.call_id !== 'string' || seenCalls.has(`${item.type}:${item.call_id}`)) continue;
+          if (item.type === 'function_call' && 'name' in item) { seenCalls.add(`${item.type}:${item.call_id}`); appendFileSync(join(capture.systemDir, '..', 'tool-calls.jsonl'), JSON.stringify({ kind: 'call', callId: item.call_id, name: item.name, arguments: 'arguments' in item ? String(item.arguments).slice(0, 2000) : '' }) + '\n'); }
+          if (item.type === 'function_call_output') { seenCalls.add(`${item.type}:${item.call_id}`); appendFileSync(join(capture.systemDir, '..', 'tool-calls.jsonl'), JSON.stringify({ kind: 'output', callId: item.call_id, output: 'output' in item ? JSON.stringify(item.output).slice(0, 1500) : '' }) + '\n'); }
+        }
+        appendFileSync(traceFile, JSON.stringify({ type: 'provider_request', id, model: actualModel, effort, sessionId: options?.sessionId ?? `pi-request-${id}`, ...(wire ? { system: { sha256: wire.systemSha256, chars: wire.systemChars, allSha256: wire.allSystemSha256, inputShape: wire.inputShape, toolNames: wire.toolNames, toolsSha256: wire.toolsSha256 } } : {}) }) + '\n');
+        if (actualModel !== piModel || effort !== 'high') throw new Error('Comparison requires every Pi request to use gpt-6.1-sol:high');
+        return replacement;
+      },
+    });
+    const observation = stream.result().then(message => {
+      const toolCalls = capture ? message.content.flatMap(part => part.type === 'toolCall' ? [part.name] : []) : null;
+      appendFileSync(traceFile, JSON.stringify({ type: 'provider_response', id, model: `${message.provider}/${message.model}`, effort, ...(message.stopReason === 'aborted' || message.stopReason === 'error' ? {} : { usage: message.usage }), stopReason: message.stopReason, sessionId: options?.sessionId ?? `pi-request-${id}`, ...(toolCalls ? { toolCalls } : {}) }) + '\n');
+    }, error => { appendFileSync(traceFile, JSON.stringify({ type: 'provider_error', id, model: actualModel, effort, sessionId: options?.sessionId ?? `pi-request-${id}`, error: error instanceof Error ? error.name : 'Error' }) + '\n'); });
+    pending.add(observation); void observation.finally(() => pending.delete(observation));
+    return stream;
+  };
+  return { runtime, async drain() {
+    const { promise, reject } = Promise.withResolvers<never>();
+    const timer = setTimeout(() => reject(new Error('Pi observation drain timeout')), 5000);
+    try { await Promise.race([Promise.all([...pending]), promise]); } finally { clearTimeout(timer); }
+  } };
+}
+export function extractPiRequestUsage(text: string): RunnerUsage {
+  const rows: PiRequestRecord[] = text.trim().split('\n').filter(Boolean).map(line => {
+    const raw: unknown = JSON.parse(line);
+    if (!Value.Check(recordSchema, raw)) throw new Error('Invalid Pi request capture record');
+    return raw;
+  });
+  const sessions = new Map<string, SessionUsage>(), requestIds = new Map<number, PiRequestRecord>();
+  const limitations: string[] = [], unknown: UnknownUsageRequest[] = [];
+  let validModelEffort = true, knownUsageRequests = 0;
+  for (const row of rows) {
+    if (row.model !== piModel || row.effort !== 'high') validModelEffort = false;
+    if (row.type === 'provider_request') {
+      requestIds.set(row.id, row);
+      const session: SessionUsage = sessions.get(row.sessionId) ?? { id: row.sessionId, source: 'Pi-public-runtime', requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, models: [], thinking: [] };
+      session.requests++;
+      if (!session.models.includes(row.model)) session.models.push(row.model);
+      if (!session.thinking.includes(row.effort)) session.thinking.push(row.effort);
+      sessions.set(row.sessionId, session);
+    }
+    if (row.type !== 'provider_response' && row.type !== 'provider_error') continue;
+    requestIds.delete(row.id);
+    if (!row.usage) {
+      const reason = `Pi response usage unavailable (${row.stopReason ?? row.type})`;
+      unknown.push({ requestId: String(row.id), sessionId: row.sessionId, purpose: 'Pi runtime request', reason });
+      limitations.push(reason); continue;
+    }
+    const session = sessions.get(row.sessionId);
+    if (!session) { limitations.push(`Pi response ${row.id} lacks request identity`); continue; }
+    knownUsageRequests++; session.input += row.usage.input; session.output += row.usage.output; session.cacheRead += row.usage.cacheRead; session.cacheWrite += row.usage.cacheWrite;
+  }
+  for (const [id, row] of requestIds) {
+    unknown.push({ requestId: String(id), sessionId: row.sessionId, purpose: 'Pi runtime request', reason: 'Response capture absent' });
+    limitations.push(`Request ${id}: response capture absent`);
+  }
+  const values = [...sessions.values()], total: UsageTotals = { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  for (const session of values) for (const key of Object.keys(total) as (keyof UsageTotals)[]) total[key] += session[key];
+  return { ...total, sessions: values, sessionCount: values.length, models: [...new Set(values.flatMap(s => s.models))], thinking: [...new Set(values.flatMap(s => s.thinking))], complete: limitations.length === 0, limitations, validModelEffort, knownUsageRequests, unknownUsageRequests: { count: unknown.length, requests: unknown }, blockedRequests: { count: 0, requests: [] }, enforcedRequests: { count: 0, requests: [] } };
+}
+
+async function runPiChild(options: PiRunnerOptions): Promise<RunnerResult> {
+  await mkdir(options.outDir, { recursive: true });
+  const traceFile = join(options.outDir, 'provider-requests.jsonl'), eventsFile = join(options.outDir, 'events.jsonl');
+  const variant = options.promptVariant === undefined ? undefined : await loadPromptVariant(options.promptVariant);
+  if (variant) await writeFile(join(options.outDir, 'prompt-variant.json'), JSON.stringify({ name: variant.name, file: variant.file, sha256: variant.sha256, chars: variant.chars }, null, 2));
+  const observed = await observedPiRuntime(traceFile, variant ? { systemDir: join(options.outDir, 'system-prompts') } : undefined);
+  await writeFile(eventsFile, '');
+  const startedAt = Date.now();
+  const report = await runOrchestrated({ cwd: options.cwd, problem: options.instruction, routes: piRoutes, modelRuntime: observed.runtime, limits: { overallMs: options.timeoutSec * 1000 }, baseSystemPrompt: variant?.text, sink: event => appendFileSync(eventsFile, JSON.stringify(event) + '\n') });
+  await observed.drain();
+  const finishedAt = Date.now();
+  const usage = extractPiRequestUsage(await readFile(traceFile, 'utf8'));
+  await writeFile(join(options.outDir, 'report.json'), JSON.stringify(report, null, 2));
+  const status = report.status === 'done' && usage.validModelEffort ? 'done' : 'failed';
+  return { status, answer: report.answer ?? report.summary, startedAt, finishedAt, exitCode: status === 'done' ? 0 : 1,
+    ...(status === 'failed' ? { error: report.summary } : {}), usage, command: ['runOrchestrated', JSON.stringify({ routes: piRoutes, limits: { overallMs: options.timeoutSec * 1000 }, ...(variant ? { promptVariant: variant.name, promptSha256: variant.sha256 } : {}) })], overlay: piRoutes };
+}
+
+/** The outer process-group timeout also bounds uncooperative tools/disposal. */
+export async function runPi(options: PiRunnerOptions): Promise<RunnerResult> {
+  const outDir = resolve(options.outDir);
+  await mkdir(outDir, { recursive: true });
+  const input = join(outDir, 'runner-input.json'), output = join(outDir, 'runner-result.json');
+  await writeFile(input, JSON.stringify({ ...options, outDir }));
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const args = ['tsx', fileURLToPath(import.meta.url), '--child', input, '--result', output];
+  const startedAt = Date.now();
+  const processResult = await runProcess('npx', args, { cwd: root, timeoutMs: (options.timeoutSec + 30) * 1000, stdoutFile: join(outDir, 'stdout.txt'), stderrFile: join(outDir, 'stderr.txt') });
+  try {
+    const raw: unknown = JSON.parse(await readFile(output, 'utf8'));
+    if (!Value.Check(runnerResultSchema, raw)) throw new Error('Malformed Pi child result');
+    return { ...raw, startedAt, finishedAt: Date.now(), command: ['npx', ...args] };
+  } catch (error) {
+    let usage: RunnerUsage = { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, sessions: [], sessionCount: 0, models: [], thinking: [], complete: false, limitations: ['Pi child did not return a final result'], validModelEffort: false, knownUsageRequests: 0, unknownUsageRequests: { count: 0, requests: [] }, blockedRequests: { count: 0, requests: [] }, enforcedRequests: { count: 0, requests: [] } };
+    try { usage = extractPiRequestUsage(await readFile(join(outDir, 'provider-requests.jsonl'), 'utf8')); } catch { /* Explicit partial usage remains. */ }
+    return { status: processResult.timedOut ? 'timeout' : 'failed', answer: '', startedAt, finishedAt: Date.now(), exitCode: processResult.exitCode, error: processResult.stderr || (error instanceof Error ? error.message : String(error)), usage, command: ['npx', ...args], overlay: piRoutes };
+  }
+}
+
+export async function probePi(options: RunnerOptions): Promise<RunnerResult> {
+  await mkdir(options.outDir, { recursive: true });
+  const traceFile = join(options.outDir, 'provider-requests.jsonl');
+  const observed = await observedPiRuntime(traceFile);
+  const startedAt = Date.now();
+  const session = await createSession({ cwd: options.cwd, route: { role: 'probe', model: piModel, thinking: 'high' }, modelRuntime: observed.runtime, tools: [], instructions: 'Reply to the user directly.' });
+  const timer = setTimeout(() => { void session.abort(); }, options.timeoutSec * 1000);
+  try {
+    await session.prompt(options.instruction);
+    await observed.drain();
+    await writeFile(join(options.outDir, 'transcript.json'), JSON.stringify(session.messages, null, 2));
+    const last = [...session.messages].reverse().find(message => message.role === 'assistant');
+    const answer = last?.role === 'assistant' ? last.content.filter(part => part.type === 'text').map(part => part.text).join('\n') : '';
+    const usage = extractPiRequestUsage(await readFile(traceFile, 'utf8'));
+    return { status: usage.complete && usage.validModelEffort && answer ? 'done' : 'failed', answer, startedAt, finishedAt: Date.now(), exitCode: 0, usage, command: ['createSession', 'openai/gpt-6.1-sol:high', 'prompt'] };
+  } finally { clearTimeout(timer); await session.abort(); session.dispose(); }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const args = process.argv.slice(2);
+  const inputPath = args[args.indexOf('--child') + 1], resultPath = args[args.indexOf('--result') + 1];
+  const schema = Type.Object({ cwd: Type.String(), instruction: Type.String(), outDir: Type.String(), timeoutSec: Type.Number({ exclusiveMinimum: 0 }), promptVariant: Type.Optional(Type.String()) });
+  const raw: unknown = JSON.parse(await readFile(inputPath!, 'utf8'));
+  if (!Value.Check(schema, raw) || !resultPath) throw new Error('Invalid Pi child invocation');
+  await writeFile(resultPath, JSON.stringify(await runPiChild(raw), null, 2));
+}

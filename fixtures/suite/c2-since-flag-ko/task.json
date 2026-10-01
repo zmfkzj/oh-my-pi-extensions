@@ -1,0 +1,16 @@
+{
+  "id": "c2-since-flag-ko",
+  "title": "Since Flag Ko",
+  "category": "feature",
+  "language": "ko",
+  "instruction": "logtool에 --since <ISO 시각> 옵션을 추가해 주세요. 지정한 시각과 같거나 그 이후인 로그만 집계해야 합니다. Z 또는 명시적 오프셋이 있는 ISO 시각을 받고, 서로 다른 오프셋도 실제 시각으로 비교해 주세요. 옵션은 입력 파일 앞뒤 어디에나 올 수 있어야 합니다. 잘못된 값이나 값 누락은 파일을 읽기 전에 에러 메시지를 stderr에 출력하고 종료 코드 2를 반환해야 합니다. 옵션이 없을 때의 동작은 유지하고 도움말도 갱신해 주세요.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

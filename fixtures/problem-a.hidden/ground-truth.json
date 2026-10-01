@@ -1,0 +1,55 @@
+{
+  "rootCause": {
+    "file": "src/token-cache.js",
+    "startLine": 28,
+    "endLine": 30
+  },
+  "relatedFiles": [
+    "src/authenticated-client.js"
+  ],
+  "facts": [
+    "An old request can return 401 after a replacement credential is cached.",
+    "Unconditional invalidation discards that newer credential.",
+    "Invalidate only the rejected credential, and supply its identity from the client."
+  ],
+  "keywordGroups": [
+    [
+      "cache",
+      "invalidat"
+    ],
+    [
+      "invalidat",
+      "clear",
+      "discard",
+      "evict",
+      "erase",
+      "wipe",
+      "unset"
+    ],
+    [
+      "old",
+      "stale",
+      "late",
+      "older",
+      "delayed",
+      "previous",
+      "rejected",
+      "earlier"
+    ],
+    [
+      "newer",
+      "replacement",
+      "refreshed",
+      "fresh",
+      "new token",
+      "new credential",
+      "valid",
+      "current"
+    ]
+  ],
+  "distractors": [
+    "expiry skew in src/clock.js and src/token-cache.js",
+    "retry attempt count in src/retry-policy.js",
+    "Promise.all aggregation in src/invoice-service.js"
+  ]
+}

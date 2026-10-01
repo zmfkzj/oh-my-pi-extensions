@@ -1,0 +1,16 @@
+{
+  "id": "c1-timezone",
+  "title": "Timezone",
+  "category": "bugfix",
+  "language": "en",
+  "instruction": "Hourly logtool reports change when the same logs are processed on a non-UTC machine. Fix timestamp bucketing so ISO timestamps with explicit offsets represent the same instant and are grouped into UTC hours on every host. Keep the existing UTC hour label format, source grouping, counts, and CLI behavior.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

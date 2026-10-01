@@ -1,0 +1,16 @@
+{
+  "id": "a6-typo-message",
+  "title": "Correct checkout error spelling",
+  "category": "trivial",
+  "language": "en",
+  "instruction": "Fix the user-facing empty-cart checkout error in src/checkout.js. It currently says \"Cannot checkout an emtpy cart\"; it must say exactly \"Cannot checkout an empty cart\". Do not change other behavior.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

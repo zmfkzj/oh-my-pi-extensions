@@ -1,0 +1,16 @@
+{
+  "id": "b3-pagination",
+  "title": "pagination",
+  "category": "bugfix",
+  "language": "ko",
+  "instruction": "목록 API의 페이지네이션 때문에 마지막 페이지의 항목이 빠지고, 여러 페이지를 이어 조회해도 전체 목록이 맞지 않습니다. GET /items의 page는 1부터 시작하고 limit는 페이지당 항목 수입니다. 삽입 순서대로 각 항목을 정확히 한 번씩 반환하도록 고쳐 주세요. 마지막 페이지가 덜 차거나 범위를 넘어선 경우도 처리하고, total/page/limit 메타데이터와 기존 잘못된 입력의 400 응답은 유지해 주세요.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

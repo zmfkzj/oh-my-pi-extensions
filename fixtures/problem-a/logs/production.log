@@ -1,0 +1,10 @@
+2026-09-28T10:00:00.000Z sync batch=42 accounts=3 started
+2026-09-28T10:00:00.001Z identity token_issued fingerprint=alpha ttl_ms=60000
+2026-09-28T10:00:00.007Z upstream path=/accounts/north/invoices fingerprint=alpha status=401
+2026-09-28T10:00:00.009Z identity token_issued fingerprint=bravo ttl_ms=60000
+2026-09-28T10:00:00.010Z upstream path=/accounts/north/invoices fingerprint=bravo status=200
+2026-09-28T10:00:00.021Z upstream path=/accounts/south/invoices fingerprint=alpha status=401
+2026-09-28T10:00:00.022Z identity token_issue status=429 retry_after_s=30
+2026-09-28T10:00:00.024Z sync batch=42 failed error="identity rate limited"
+2026-09-28T10:00:32.000Z sync batch=43 accounts=1 started
+2026-09-28T10:00:32.008Z sync batch=43 completed invoices=7

@@ -1,0 +1,16 @@
+{
+  "id": "b1-static-traversal",
+  "title": "static traversal",
+  "category": "bugfix",
+  "language": "en",
+  "instruction": "Users have reported that encoded URLs under /static/ can return files outside public/. Fix the static-file containment bug. Block traversal (including encoded separators and dot segments), preserve normal nested files and percent-encoded filenames, and return a 4xx response rather than exposing outside content. Keep the rest of the API unchanged.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}

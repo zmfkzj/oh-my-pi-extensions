@@ -1,0 +1,16 @@
+{
+  "id": "b2-patch-endpoint",
+  "title": "patch endpoint",
+  "category": "feature",
+  "language": "en",
+  "instruction": "Add PATCH /items/:id. Accept a nonempty JSON object containing only name and/or quantity. name must be a nonblank string and is trimmed; quantity must be a nonnegative integer. Reject malformed JSON, empty objects, arrays, null, unknown fields and invalid values with 400. Validate the payload before looking up the id. A valid payload for a missing id returns 404. A name already used by another item returns 409; keeping the same name is allowed. Return 200 with the full updated item, preserving id and unspecified fields. A rejected patch must not change stored data. Keep existing endpoints unchanged.",
+  "expectsChanges": true,
+  "timeoutSec": 900,
+  "grading": {
+    "visibleTests": true,
+    "hiddenTests": true,
+    "rubric": false,
+    "mustNotModify": false,
+    "custom": false
+  }
+}
