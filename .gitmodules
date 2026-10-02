@@ -14,3 +14,7 @@
 	path = images
 	url = https://github.com/zmfkzj/pi-images.git
 	branch = main
+[submodule "session-bus"]
+	path = session-bus
+	url = https://github.com/zmfkzj/pi-session-bus.git
+	branch = main
