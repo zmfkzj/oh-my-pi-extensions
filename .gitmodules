@@ -10,3 +10,7 @@
 	path = pi-commit
 	url = https://github.com/zmfkzj/pi-commit.git
 	branch = main
+[submodule "images"]
+	path = images
+	url = https://github.com/zmfkzj/pi-images.git
+	branch = main
