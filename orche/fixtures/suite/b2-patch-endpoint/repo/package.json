@@ -1,9 +1,0 @@
-{
-  "name": "minihttp",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test",
-    "start": "node src/server.js"
-  }
-}

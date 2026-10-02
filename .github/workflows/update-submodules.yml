@@ -1,0 +1,36 @@
+name: Update submodules
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [submodule-updated]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-submodules
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Update and push submodule commits
+        run: |
+          git submodule update --init --remote --recursive
+          if git diff --quiet; then
+            echo "Submodules are already up to date."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- orche browser
+          git commit -m 'chore: update submodules to latest'
+          git push

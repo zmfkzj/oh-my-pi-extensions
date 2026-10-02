@@ -1,7 +1,23 @@
+# Dependencies (any package in the repo)
 node_modules/
-results/**/tmp/
+
+# Build / test output
+dist/
+coverage/
 *.tsbuildinfo
+*.log
+
+# Local environment and secrets
 .env
+.env.*
+!.env.example
 
 # Benchmark and experiment outputs: kept locally, not versioned.
 results/
+results/**/tmp/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,9 +1,0 @@
-{
-  "routes": {},
-  "limits": { "overallMs": 3600000 },
-  "default": { "model": "openai/gpt-6.1-sol", "thinking": "high" },
-  "advisors": [
-    { "preset": "plan-review", "enabled": false },
-    { "preset": "verification-audit", "enabled": false }
-  ]
-}

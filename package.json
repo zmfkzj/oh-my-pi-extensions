@@ -1,0 +1,21 @@
+{
+  "name": "oh-my-pi-extensions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "scripts": {
+    "postinstall": "node scripts/bootstrap.mjs"
+  },
+  "dependencies": {
+    "@amaster.ai/pi-computer-use": "^0.1.22"
+  },
+  "pi": {
+    "skills": ["./browser/skills"],
+    "extensions": [
+      "./orche/src/extension/index.ts",
+      "./browser/src/extension/index.ts",
+      "./node_modules/@amaster.ai/pi-computer-use/dist/index.js"
+    ]
+  }
+}

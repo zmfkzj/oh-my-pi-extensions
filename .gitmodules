@@ -1,0 +1,8 @@
+[submodule "orche"]
+	path = orche
+	url = https://github.com/zmfkzj/pi-orche.git
+	branch = master
+[submodule "browser"]
+	path = browser
+	url = https://github.com/zmfkzj/pi-browser.git
+	branch = master
