@@ -6,3 +6,7 @@
 	path = browser
 	url = https://github.com/zmfkzj/pi-browser.git
 	branch = master
+[submodule "pi-commit"]
+	path = pi-commit
+	url = https://github.com/zmfkzj/pi-commit.git
+	branch = main

@@ -15,7 +15,8 @@
     "extensions": [
       "./orche/src/extension/index.ts",
       "./browser/src/extension/index.ts",
-      "./node_modules/@amaster.ai/pi-computer-use/dist/index.js"
+      "./node_modules/@amaster.ai/pi-computer-use/dist/index.js",
+      "./pi-commit/src/index.ts"
     ]
   }
 }
