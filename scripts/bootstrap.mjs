@@ -2,7 +2,8 @@
 // never update submodules, then run npm install --omit=dev --legacy-peer-deps
 // with lifecycle scripts enabled. Populate/sync submodules and restore deps here.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,17 @@ function checked(result, label) {
     fail(`${label}: ${result.error?.message || result.stderr?.trim() || `exit ${result.status}, signal ${result.signal}`}`);
   }
   return result.stdout;
+}
+
+function dependenciesHash(cwd) {
+  const hash = createHash("sha256");
+  for (const name of ["package.json", "package-lock.json", "npm-shrinkwrap.json"]) {
+    const path = join(cwd, name);
+    const present = existsSync(path);
+    hash.update(`${name}\0${present ? "1" : "0"}\0`);
+    if (present) hash.update(readFileSync(path));
+  }
+  return hash.digest("hex");
 }
 
 try {
@@ -44,13 +56,18 @@ try {
           console.log(`[bootstrap] Skipping git update for ${path}: on a branch or dirty (developer checkout).`);
         }
         const { dependencies = {} } = JSON.parse(readFileSync(manifest, "utf8"));
-        if (Object.keys(dependencies).some((name) => !existsSync(join(cwd, "node_modules", name)))) {
-          console.log(`[bootstrap] Installing missing dependencies in ${path}.`);
+        const stamp = join(cwd, "node_modules", ".pi-bootstrap-dependencies.sha256");
+        const changed = !existsSync(stamp) || readFileSync(stamp, "utf8") !== dependenciesHash(cwd);
+        if (changed || Object.keys(dependencies).some((name) => !existsSync(join(cwd, "node_modules", name)))) {
+          console.log(`[bootstrap] Installing missing or changed dependencies in ${path}.`);
           const windows = process.platform === "win32";
           // Inherit npm_config_omit from Pi; local installs may also need dev deps.
           checked(spawnSync(windows ? "npm.cmd" : "npm", ["install", "--legacy-peer-deps"], {
             cwd, stdio: "inherit", shell: windows,
           }), `Install dependencies in ${path}`);
+          // npm may create or update the lockfile during a successful install.
+          mkdirSync(join(cwd, "node_modules"), { recursive: true });
+          writeFileSync(stamp, dependenciesHash(cwd));
         }
       }
     }
