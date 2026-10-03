@@ -3,12 +3,13 @@
 // with lifecycle scripts enabled. Populate/sync submodules and restore deps here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+const lockfiles = ["package-lock.json", "npm-shrinkwrap.json"];
 const fail = (message) => { throw new Error(message); };
 function checked(result, label) {
   if (result.error || result.status !== 0) {
@@ -19,13 +20,30 @@ function checked(result, label) {
 
 function dependenciesHash(cwd) {
   const hash = createHash("sha256");
-  for (const name of ["package.json", "package-lock.json", "npm-shrinkwrap.json"]) {
+  for (const name of ["package.json", ...lockfiles]) {
     const path = join(cwd, name);
     const present = existsSync(path);
     hash.update(`${name}\0${present ? "1" : "0"}\0`);
     if (present) hash.update(readFileSync(path));
   }
   return hash.digest("hex");
+}
+
+// Only detached, otherwise-clean worktrees belong to Pi. Never touch a
+// developer checkout's lockfiles, including staged changes or deletions.
+function restoreManagedLockfiles(path) {
+  const head = git(["-C", path, "symbolic-ref", "-q", "HEAD"]);
+  if (head.error || (head.status !== 0 && head.status !== 1)) checked(head, `Inspect ${path} HEAD`);
+  const status = checked(git(["-C", path, "status", "--porcelain", "-z"]), `Inspect ${path} worktree`);
+  const changes = status.split("\0").filter(Boolean).map((entry) => ({ status: entry.slice(0, 2), file: entry.slice(3) }));
+  if (head.status !== 1 || changes.some((change) =>
+    !lockfiles.includes(change.file) || (change.status !== " M" && change.status !== "??"))) return false;
+  for (const change of changes) {
+    if (change.status === "??") rmSync(join(root, path, change.file));
+    else checked(git(["-C", path, "checkout", "--", change.file]), `Restore ${path}/${change.file}`);
+  }
+  if (changes.length) console.log(`[bootstrap] Cleaned npm lockfile changes in ${path}.`);
+  return true;
 }
 
 try {
@@ -44,10 +62,7 @@ try {
         const manifest = join(cwd, "package.json");
         let update = !existsSync(manifest);
         if (!update) {
-          const head = git(["-C", path, "symbolic-ref", "-q", "HEAD"]);
-          if (head.error || (head.status !== 0 && head.status !== 1)) checked(head, `Inspect ${path} HEAD`);
-          const status = checked(git(["-C", path, "status", "--porcelain"]), `Inspect ${path} worktree`);
-          update = head.status === 1 && status.trim() === "";
+          update = restoreManagedLockfiles(path);
         }
         if (update) {
           console.log(`[bootstrap] Syncing ${path} to its recorded commit.`);
@@ -65,7 +80,8 @@ try {
           checked(spawnSync(windows ? "npm.cmd" : "npm", ["install", "--legacy-peer-deps"], {
             cwd, stdio: "inherit", shell: windows,
           }), `Install dependencies in ${path}`);
-          // npm may create or update the lockfile during a successful install.
+          // Restore npm's lockfile changes before hashing, but only for Pi-managed checkouts.
+          if (update) restoreManagedLockfiles(path);
           mkdirSync(join(cwd, "node_modules"), { recursive: true });
           writeFileSync(stamp, dependenciesHash(cwd));
         }

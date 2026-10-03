@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 
+/**
+ * @param {import("node:test").TestContext} t
+ * @param {Record<string, string>} [dependencies]
+ */
 function fixture(t, dependencies = { "fixture-dependency": "1.0.0" }) {
   const root = mkdtempSync(join(tmpdir(), "pi-bootstrap-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -31,6 +36,11 @@ const { dependencies = {} } = JSON.parse(fs.readFileSync("package.json", "utf8")
 fs.mkdirSync("node_modules", { recursive: true });
 for (const name of Object.keys(dependencies)) fs.mkdirSync(path.join("node_modules", name), { recursive: true });
 if (!fs.existsSync("package-lock.json")) fs.writeFileSync("package-lock.json", '{"lockfileVersion":3}');
+if (fs.existsSync("rewrite-lockfiles")) {
+  for (const name of ["package-lock.json", "npm-shrinkwrap.json"]) {
+    if (fs.existsSync(name)) fs.writeFileSync(name, '{"lockfileVersion":3,"npmRewritten":true}');
+  }
+}
 `, { mode: 0o755 });
   copyFileSync(installer, join(bin, "npm"));
   writeFileSync(join(bin, "npm.cmd"), `@"${process.execPath}" "${installer}" %*\r\n`);
@@ -43,7 +53,45 @@ if (!fs.existsSync("package-lock.json")) fs.writeFileSync("package-lock.json", '
     const result = run();
     assert.equal(result.status, 0, result.stderr);
   };
-  return { cwd, manifest, run, calls, success };
+  return { root, cwd, manifest, run, calls, success };
+}
+
+function git(cwd, args) {
+  const result = spawnSync("git", ["-c", "user.name=Bootstrap Test", "-c", "user.email=bootstrap@example.invalid",
+    "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+function submoduleFixture(t, lockfiles = ["package-lock.json"]) {
+  const result = fixture(t);
+  const { root, cwd } = result;
+  writeFileSync(join(cwd, ".gitignore"), "node_modules/\ninstall.log\nfail-install\nrewrite-lockfiles\n");
+  writeFileSync(join(cwd, "README.md"), "old commit\n");
+  for (const name of lockfiles) writeFileSync(join(cwd, name), '{"lockfileVersion":2}');
+  git(cwd, ["add", "."]);
+  git(cwd, ["commit", "--quiet", "-m", "Initial dependencies"]);
+  const previous = git(cwd, ["rev-parse", "HEAD"]);
+  git(root, ["submodule", "add", "--force", "./fixture", "fixture"]);
+  writeFileSync(join(cwd, "README.md"), "recorded commit\n");
+  git(cwd, ["add", "README.md"]);
+  git(cwd, ["commit", "--quiet", "-m", "Recorded commit"]);
+  const recorded = git(cwd, ["rev-parse", "HEAD"]);
+  git(root, ["add", ".gitmodules", "fixture"]);
+  git(root, ["commit", "--quiet", "-m", "Record submodule"]);
+  git(cwd, ["checkout", "--quiet", "--detach", previous]);
+  return { ...result, previous, recorded };
+}
+
+function expectedDependenciesHash(cwd) {
+  const hash = createHash("sha256");
+  for (const name of ["package.json", "package-lock.json", "npm-shrinkwrap.json"]) {
+    const path = join(cwd, name);
+    const present = existsSync(path);
+    hash.update(`${name}\0${present ? "1" : "0"}\0`);
+    if (present) hash.update(readFileSync(path));
+  }
+  return hash.digest("hex");
 }
 
 test("bootstrap installs fresh dependencies, skips no-op runs, and tracks manifest and lockfile changes", (t) => {
@@ -105,3 +153,101 @@ test("bootstrap creates dependencies and a stamp for a fresh package without run
   success();
   assert.equal(calls().length, 1);
 });
+
+for (const name of ["package-lock.json", "npm-shrinkwrap.json"]) {
+  test(`bootstrap restores a detached submodule's modified ${name} before syncing`, (t) => {
+    const { cwd, recorded, run, calls, success } = submoduleFixture(t, [name]);
+    const original = readFileSync(join(cwd, name), "utf8");
+    writeFileSync(join(cwd, name), '{"lockfileVersion":3,"modified":true}');
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\[bootstrap\] Cleaned npm lockfile changes in fixture\./);
+    assert.match(result.stdout, /\[bootstrap\] Syncing fixture to its recorded commit\./);
+    assert.equal(git(cwd, ["rev-parse", "HEAD"]), recorded);
+    assert.equal(readFileSync(join(cwd, name), "utf8"), original);
+    assert.equal(git(cwd, ["status", "--porcelain"]), "");
+    success();
+    assert.equal(calls().length, 1, "restored lockfiles must not cause a reinstall loop");
+  });
+
+  test(`bootstrap removes a detached submodule's untracked ${name} before syncing`, (t) => {
+    const { cwd, recorded, run, calls, success } = submoduleFixture(t, []);
+    writeFileSync(join(cwd, name), '{"lockfileVersion":3}');
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\[bootstrap\] Cleaned npm lockfile changes in fixture\./);
+    assert.match(result.stdout, /\[bootstrap\] Syncing fixture to its recorded commit\./);
+    assert.equal(git(cwd, ["rev-parse", "HEAD"]), recorded);
+    assert.equal(existsSync(join(cwd, name)), false);
+    assert.equal(git(cwd, ["status", "--porcelain"]), "");
+    success();
+    assert.equal(calls().length, 1, "removed lockfiles must not cause a reinstall loop");
+  });
+}
+
+test("bootstrap preserves lockfiles in a detached submodule with other dirty files", (t) => {
+  const { cwd, previous, run } = submoduleFixture(t);
+  const lockfile = '{"lockfileVersion":3,"modified":true}';
+  writeFileSync(join(cwd, "package-lock.json"), lockfile);
+  writeFileSync(join(cwd, "README.md"), "developer changes\n");
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\[bootstrap\] Skipping git update for fixture: on a branch or dirty \(developer checkout\)\./);
+  assert.doesNotMatch(result.stdout, /Cleaned npm lockfile changes/);
+  assert.equal(git(cwd, ["rev-parse", "HEAD"]), previous);
+  assert.equal(readFileSync(join(cwd, "package-lock.json"), "utf8"), lockfile);
+  assert.equal(readFileSync(join(cwd, "README.md"), "utf8"), "developer changes\n");
+});
+
+test("bootstrap preserves lockfiles in a submodule on a branch", (t) => {
+  const { cwd, previous, run } = submoduleFixture(t);
+  git(cwd, ["checkout", "--quiet", "-b", "developer"]);
+  const lockfile = '{"lockfileVersion":3,"modified":true}';
+  writeFileSync(join(cwd, "package-lock.json"), lockfile);
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\[bootstrap\] Skipping git update for fixture: on a branch or dirty \(developer checkout\)\./);
+  assert.doesNotMatch(result.stdout, /Cleaned npm lockfile changes/);
+  assert.equal(git(cwd, ["symbolic-ref", "--short", "HEAD"]), "developer");
+  assert.equal(git(cwd, ["rev-parse", "HEAD"]), previous);
+  assert.equal(readFileSync(join(cwd, "package-lock.json"), "utf8"), lockfile);
+});
+
+for (const lockfiles of [["package-lock.json", "npm-shrinkwrap.json"], []]) {
+  test(`bootstrap cleans npm's ${lockfiles.length ? "tracked" : "untracked"} lockfiles before stamping a detached submodule`, (t) => {
+    const { cwd, recorded, run, calls, success } = submoduleFixture(t, lockfiles);
+    writeFileSync(join(cwd, "rewrite-lockfiles"), "");
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\[bootstrap\] Cleaned npm lockfile changes in fixture\./);
+    assert.equal(git(cwd, ["rev-parse", "HEAD"]), recorded);
+    assert.equal(git(cwd, ["status", "--porcelain"]), "");
+    for (const name of lockfiles) assert.equal(readFileSync(join(cwd, name), "utf8"), '{"lockfileVersion":2}');
+    if (!lockfiles.length) assert.equal(existsSync(join(cwd, "package-lock.json")), false);
+    const stamp = join(cwd, "node_modules", ".pi-bootstrap-dependencies.sha256");
+    assert.equal(readFileSync(stamp, "utf8"), expectedDependenciesHash(cwd));
+    success();
+    assert.equal(calls().length, 1, "the stamp must hash restored lockfiles, not npm's changes");
+  });
+}
+
+for (const onBranch of [false, true]) {
+  test(`bootstrap keeps npm's lockfile rewrites in a ${onBranch ? "branch" : "dirty detached"} developer checkout`, (t) => {
+    const { cwd, previous, run, calls, success } = submoduleFixture(t, ["package-lock.json", "npm-shrinkwrap.json"]);
+    if (onBranch) git(cwd, ["checkout", "--quiet", "-b", "developer"]);
+    else writeFileSync(join(cwd, "README.md"), "developer changes\n");
+    writeFileSync(join(cwd, "rewrite-lockfiles"), "");
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Skipping git update for fixture/);
+    assert.doesNotMatch(result.stdout, /Cleaned npm lockfile changes/);
+    assert.equal(git(cwd, ["rev-parse", "HEAD"]), previous);
+    for (const name of ["package-lock.json", "npm-shrinkwrap.json"]) {
+      assert.equal(readFileSync(join(cwd, name), "utf8"), '{"lockfileVersion":3,"npmRewritten":true}');
+    }
+    const stamp = join(cwd, "node_modules", ".pi-bootstrap-dependencies.sha256");
+    assert.equal(readFileSync(stamp, "utf8"), expectedDependenciesHash(cwd));
+    success();
+    assert.equal(calls().length, 1);
+  });
+}
