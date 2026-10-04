@@ -17,7 +17,8 @@
       "./browser/src/extension/index.ts",
       "./node_modules/@amaster.ai/pi-computer-use/dist/index.js",
       "./pi-commit/src/index.ts",
-      "./session-bus/src/index.ts"
+      "./session-bus/src/index.ts",
+      "./images/src/index.ts"
     ]
   }
 }

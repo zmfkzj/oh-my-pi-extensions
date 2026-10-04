@@ -1,12 +1,13 @@
 # oh-my-pi-extensions
 
-Five bundled packages for Pi:
+Six bundled packages for Pi:
 
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
 - **[browser/](https://github.com/zmfkzj/pi-browser)** — git submodule for browser tools, backed by the obscura headless browser's stdio MCP server. The binary is not bundled.
 - **[@amaster.ai/pi-computer-use](https://www.npmjs.com/package/@amaster.ai/pi-computer-use)** — npm dependency for desktop automation.
 - **[pi-commit/](https://github.com/zmfkzj/pi-commit)** — git submodule to preview and explicitly confirm safe single or hunk-split Git commits via `/commit`.
 - **[session-bus/](https://github.com/zmfkzj/pi-session-bus)** — git submodule that lets separate local Pi sessions exchange messages over Unix sockets and wake each other.
+- **[images/](https://github.com/zmfkzj/pi-images)** — git submodule with the CLIProxyAPI image provider and a `generate_image` tool that shows results inline and takes file paths or attached images as references.
 
 The root is a batch-install manifest, not an npm workspace. Each submodule keeps its own dependencies. Requires Node ≥22.19, git, and npm.
 
@@ -18,7 +19,7 @@ Local checkout:
 git clone --recurse-submodules https://github.com/zmfkzj/oh-my-pi-extensions.git
 cd oh-my-pi-extensions && npm install --legacy-peer-deps
 pi install /path/to/oh-my-pi-extensions
-# Or try all five without saving:
+# Or try all six without saving:
 pi -e /path/to/oh-my-pi-extensions
 ```
 
