@@ -25,12 +25,15 @@ jobs:
       - name: Update and push submodule commits
         run: |
           git submodule update --init --remote --recursive
-          if git diff --quiet; then
+          # Every submodule listed in .gitmodules, so adding or removing one needs no change here.
+          mapfile -t paths < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}')
+          git add -- "${paths[@]}"
+          # Only moved gitlinks count: a submodule that is merely dirty (e.g. nested updates) stages nothing.
+          if git diff --cached --quiet; then
             echo "Submodules are already up to date."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- orche browser pi-commit images session-bus
           git commit -m 'chore: update submodules to latest'
           git push
