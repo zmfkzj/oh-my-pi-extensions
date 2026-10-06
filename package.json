@@ -11,11 +11,12 @@
     "@amaster.ai/pi-computer-use": "^0.1.22"
   },
   "pi": {
-    "skills": ["./browser/skills"],
+    "skills": ["./browser/skills", "./pi-gui/node_modules/@mirsella/opencode-computer-use-mcp/skills"],
     "extensions": [
       "./orche/src/extension/index.ts",
       "./browser/src/extension/index.ts",
       "./node_modules/@amaster.ai/pi-computer-use/dist/index.js",
+      "./pi-gui/src/index.ts",
       "./pi-commit/src/index.ts",
       "./session-bus/src/index.ts",
       "./images/src/index.ts"
