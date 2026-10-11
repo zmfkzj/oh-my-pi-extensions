@@ -97,7 +97,7 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/wor", "workbench"), "/workbench ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
-  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui"]) {
+  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench"]) {
     assert.equal(typeof h.registered.find(command => command.name === name)?.getArgumentCompletions, "function", `/${name} completes arguments`);
   }
   assert.equal(await h.complete("/browser engine c", "engine chrome"), "/browser engine chrome");
@@ -108,9 +108,15 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/bus wake of", "wake off"), "/bus wake off");
   assert.equal(await h.complete("/queue d", "done"), "/queue done");
   assert.equal(await h.complete("/gui view s", "view stop"), "/gui view stop", "the existing /gui completions are kept");
+  assert.equal(await h.complete("/workbench u", "use "), "/workbench use ");
+  assert.equal(await h.complete("/workbench use co", "use coding"), "/workbench use coding");
+  assert.equal(await h.complete("/workbench use ", "use off"), "/workbench use off");
+  assert.equal(await h.complete("/workbench list ga", "list game"), "/workbench list game");
+  assert.equal(await h.complete("/workbench skill ponytail-r", "skill ponytail-review"), "/workbench skill ponytail-review");
 
   // Free text, unknown words and finished arguments get no suggestions, so Enter submits them.
-  for (const line of ["/orche single fix the s", "/queue fix the lint", "/bus send peer hello", "/browser xyz", "/commit --model op", "/orche workers"]) {
+  for (const line of ["/orche single fix the s", "/queue fix the lint", "/bus send peer hello", "/browser xyz", "/commit --model op", "/orche workers",
+    "/workbench use coding", "/workbench use coding ", "/workbench status x", "/workbench skill coding", "/workbench list auto", "/workbench xyz"]) {
     assert.equal(await h.suggest(line), null, line);
   }
 });
