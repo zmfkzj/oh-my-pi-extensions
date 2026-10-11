@@ -4,7 +4,7 @@
 // Pi itself is not a dependency of this manifest: set PI_CODING_AGENT_DIR, or the `pi` on PATH or a submodule's copy is used.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -62,7 +62,7 @@ const load = async () => {
     return provider.applyCompletion([line], 0, line.length, item, suggestions.prefix).lines[0];
   };
   const dispose = () => { session.dispose(); rmSync(cwd, { recursive: true, force: true }); };
-  return { loader, registered, builtins, commands, suggest, complete, dispose };
+  return { loader, registered, builtins, commands, provider, cwd, suggest, complete, dispose };
 };
 
 test("bundled extension commands are listed and complete in Pi's slash-command autocomplete", { skip: found ? false : "Pi (@earendil-works/pi-coding-agent with pi-tui) not found; set PI_CODING_AGENT_DIR", timeout: 120_000 }, async (t) => {
@@ -118,5 +118,50 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   for (const line of ["/orche single fix the s", "/queue fix the lint", "/bus send peer hello", "/browser xyz", "/commit --model op", "/orche workers",
     "/workbench use coding", "/workbench use coding ", "/workbench status x", "/workbench skill coding", "/workbench list auto", "/workbench xyz"]) {
     assert.equal(await h.suggest(line), null, line);
+  }
+});
+
+test("Tab with no candidate list open completes /workbench arguments through the wrapper Workbench registers, and leaves the rest to Pi", { skip: found ? false : "Pi (@earendil-works/pi-coding-agent with pi-tui) not found; set PI_CODING_AGENT_DIR", timeout: 120_000 }, async (t) => {
+  const prev = process.env.PI_OFFLINE;
+  process.env.PI_OFFLINE = "1";
+  const h = await load();
+  t.after(() => { h.dispose(); if (prev === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = prev; });
+  writeFileSync(join(h.cwd, "alpha.txt"), "a\n");
+
+  // The factory the loaded Workbench extension registers from its session_start handler through ctx.ui.addAutocompleteProvider;
+  // Pi's interactive mode applies such factories over its own provider (pi-workbench/tests/pi-editor.mjs drives that path through
+  // bindExtensions and Pi's Editor). Only Workbench's handler runs here: the other extensions' session starts are not needed.
+  const workbench = h.loader.getExtensions().extensions.find(extension => extension.path.endsWith("pi-workbench/index.js"));
+  const wrappers = [];
+  for (const handler of [workbench.handlers.get("session_start") ?? []].flat()) {
+    await handler({ type: "session_start", reason: "startup" }, { ui: { addAutocompleteProvider: factory => wrappers.push(factory) } });
+  }
+  assert.equal(wrappers.length, 1, "Workbench registers one autocomplete wrapper");
+  const wrapped = wrappers.reduce((provider, wrap) => wrap(provider), h.provider);
+  const signal = new AbortController().signal;
+  const forced = async (provider, line) => (await provider.getSuggestions([line], 0, line.length, { signal, force: true }))?.items.map(item => item.value) ?? null;
+  const catalog = JSON.parse(readFileSync(join(root, "pi-workbench", "catalog.json"), "utf8"));
+
+  // Pi's own provider: its file gate declines `/workbench ` (a command and a space), and a forced Tab lists files after `use `.
+  assert.equal(h.provider.shouldTriggerFileCompletion(["/workbench "], 0, 11), false);
+  assert.ok((await forced(h.provider, "/workbench use "))?.includes("alpha.txt"), "without the wrapper: the project's files");
+  // With the wrapper: Workbench candidates at each argument position, never files.
+  assert.equal(wrapped.shouldTriggerFileCompletion(["/workbench "], 0, 11), true);
+  assert.deepEqual(await forced(wrapped, "/workbench "), ["list", "use ", "skill ", "cancel", "status", "doctor", "help"]);
+  assert.deepEqual(await forced(wrapped, "/workbench use "), [...catalog.profiles.map(profile => `use ${profile.id}`), "use auto", "use off"]);
+  assert.deepEqual(await forced(wrapped, "/workbench skill "), catalog.skills.map(skill => `skill ${skill.id}`));
+  assert.deepEqual(await forced(wrapped, "/workbench list "), catalog.profiles.map(profile => `list ${profile.id}`));
+  assert.deepEqual(await forced(wrapped, "/workbench skill ponytail"), ["skill ponytail", "skill ponytail-review"], "an exact id next to a longer one");
+  for (const line of ["/workbench use coding ", "/workbench xyz ", "/workbench status ", "/workbench cancel "]) assert.equal(await forced(wrapped, line), null, line);
+  const choice = (await wrapped.getSuggestions(["/workbench use "], 0, 15, { signal, force: true })).items.find(item => item.value === "use coding");
+  assert.equal(wrapped.applyCompletion(["/workbench use "], 0, 15, choice, "use ").lines[0], "/workbench use coding");
+  // Everything else stays Pi's: forced Tab after other commands and in plain text (file paths), and completion while typing.
+  for (const line of ["/orche ", "/browser engine ", "look at ./al"]) {
+    assert.equal(wrapped.shouldTriggerFileCompletion([line], 0, line.length), h.provider.shouldTriggerFileCompletion([line], 0, line.length), line);
+    assert.deepEqual(await forced(wrapped, line), await forced(h.provider, line), line);
+  }
+  assert.ok((await forced(wrapped, "look at ./al"))?.some(value => value.endsWith("alpha.txt")), "file completion in plain text");
+  for (const line of ["/workbench use co", "/orche mode d", "/wor", "/"]) {
+    assert.deepEqual(await wrapped.getSuggestions([line], 0, line.length, { signal }), await h.suggest(line), line);
   }
 });
