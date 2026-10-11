@@ -79,6 +79,7 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.deepEqual(byExtension["pi-commit/src/index.ts"], ["commit"]);
   assert.deepEqual(byExtension["session-bus/src/index.ts"], ["bus", "queue"]);
   assert.deepEqual(byExtension["images/src/index.ts"], [], "the command-less images extension stays command-less");
+  assert.deepEqual(byExtension["pi-workbench/index.js"], ["workbench"]);
 
   // Names: no built-in conflict, no renamed duplicate, every one in the `/` menu exactly once next to the built-ins.
   for (const command of h.registered) {
@@ -93,6 +94,7 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/orc", "orche"), "/orche ");
   assert.equal(await h.complete("/comm", "commit"), "/commit ");
   assert.equal(await h.complete("/que", "queue"), "/queue ");
+  assert.equal(await h.complete("/wor", "workbench"), "/workbench ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
   for (const name of ["browser", "orche", "commit", "bus", "queue", "gui"]) {

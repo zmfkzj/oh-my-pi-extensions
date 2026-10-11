@@ -22,3 +22,7 @@
 	path = pi-gui
 	url = https://github.com/zmfkzj/pi-gui.git
 	branch = main
+[submodule "pi-workbench"]
+	path = pi-workbench
+	url = https://github.com/zmfkzj/pi-workbench.git
+	branch = main
