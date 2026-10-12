@@ -8,7 +8,8 @@
     "postinstall": "node scripts/bootstrap.mjs"
   },
   "dependencies": {
-    "@amaster.ai/pi-computer-use": "^0.1.22"
+    "@amaster.ai/pi-computer-use": "^0.1.22",
+    "@router-for-me/pi-cliproxyapi-provider": "^1.4.22"
   },
   "pi": {
     "skills": ["./browser/skills", "./pi-gui/node_modules/@mirsella/opencode-computer-use-mcp/skills", "./pi-workbench/skills"],
@@ -20,7 +21,9 @@
       "./pi-commit/src/index.ts",
       "./session-bus/src/index.ts",
       "./images/src/index.ts",
-      "./pi-workbench/index.js"
+      "./pi-workbench/index.js",
+      "./codegraph/src/index.ts",
+      "./cliproxyapi/src/index.ts"
     ]
   }
 }

@@ -38,6 +38,12 @@ const load = async () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const cwd = mkdtempSync(join(tmpdir(), "pi-command-completions-"));
   const agentDir = join(cwd, "agent");
+  // Extensions that read Pi's agent dir (the bundled CLIProxyAPI provider: settings, cliproxyapi.json, model cache) read this
+  // empty one, not the user's; the provider then has no credentials and a closed local base URL, so it makes no real request.
+  const savedEnv = Object.fromEntries(["PI_CODING_AGENT_DIR", "CLIPROXYAPI_BASE_URL", "CLIPROXYAPI_API_KEY"].map(key => [key, process.env[key]]));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  process.env.CLIPROXYAPI_BASE_URL = "http://127.0.0.1:9";
+  delete process.env.CLIPROXYAPI_API_KEY;
   const settingsManager = pi.SettingsManager.inMemory({ compaction: { enabled: false } });
   const loader = new pi.DefaultResourceLoader({
     cwd, agentDir, settingsManager, additionalExtensionPaths: manifest.pi.extensions.map(path => resolve(root, path)),
@@ -61,7 +67,11 @@ const load = async () => {
     assert.ok(item, `${JSON.stringify(line)} offers ${JSON.stringify(suggestions.items.map(candidate => candidate.value))}, not ${JSON.stringify(value)}`);
     return provider.applyCompletion([line], 0, line.length, item, suggestions.prefix).lines[0];
   };
-  const dispose = () => { session.dispose(); rmSync(cwd, { recursive: true, force: true }); };
+  const dispose = () => {
+    session.dispose();
+    for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    rmSync(cwd, { recursive: true, force: true });
+  };
   return { loader, registered, builtins, commands, provider, cwd, suggest, complete, dispose };
 };
 
@@ -80,6 +90,9 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.deepEqual(byExtension["session-bus/src/index.ts"], ["bus", "queue"]);
   assert.deepEqual(byExtension["images/src/index.ts"], [], "the command-less images extension stays command-less");
   assert.deepEqual(byExtension["pi-workbench/index.js"], ["workbench"]);
+  assert.deepEqual(byExtension["codegraph/src/index.ts"], ["codegraph"]);
+  // The official CLIProxyAPI provider, loaded through the bundle (no separate install in this agent dir).
+  assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi-refresh", "continue", "fast", "pause"]);
 
   // Names: no built-in conflict, no renamed duplicate, every one in the `/` menu exactly once next to the built-ins.
   for (const command of h.registered) {
@@ -95,9 +108,11 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/comm", "commit"), "/commit ");
   assert.equal(await h.complete("/que", "queue"), "/queue ");
   assert.equal(await h.complete("/wor", "workbench"), "/workbench ");
+  assert.equal(await h.complete("/codeg", "codegraph"), "/codegraph ");
+  assert.equal(await h.complete("/cliproxyapi-r", "cliproxyapi-refresh"), "/cliproxyapi-refresh ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
-  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench"]) {
+  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph"]) {
     assert.equal(typeof h.registered.find(command => command.name === name)?.getArgumentCompletions, "function", `/${name} completes arguments`);
   }
   assert.equal(await h.complete("/browser engine c", "engine chrome"), "/browser engine chrome");
@@ -113,10 +128,13 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/workbench use ", "use off"), "/workbench use off");
   assert.equal(await h.complete("/workbench list ga", "list game"), "/workbench list game");
   assert.equal(await h.complete("/workbench skill ponytail-r", "skill ponytail-review"), "/workbench skill ponytail-review");
+  assert.equal(await h.complete("/codegraph sy", "sync"), "/codegraph sync");
+  assert.equal(await h.complete("/codegraph i", "init"), "/codegraph init");
 
   // Free text, unknown words and finished arguments get no suggestions, so Enter submits them.
   for (const line of ["/orche single fix the s", "/queue fix the lint", "/bus send peer hello", "/browser xyz", "/commit --model op", "/orche workers",
-    "/workbench use coding", "/workbench use coding ", "/workbench status x", "/workbench skill coding", "/workbench list auto", "/workbench xyz"]) {
+    "/workbench use coding", "/workbench use coding ", "/workbench status x", "/workbench skill coding", "/workbench list auto", "/workbench xyz",
+    "/codegraph sync", "/codegraph xyz"]) {
     assert.equal(await h.suggest(line), null, line);
   }
 });
