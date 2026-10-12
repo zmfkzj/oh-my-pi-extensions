@@ -26,3 +26,11 @@
 	path = pi-workbench
 	url = https://github.com/zmfkzj/pi-workbench.git
 	branch = main
+[submodule "codegraph"]
+	path = codegraph
+	url = https://github.com/zmfkzj/pi-codegraph.git
+	branch = main
+[submodule "cliproxyapi"]
+	path = cliproxyapi
+	url = https://github.com/zmfkzj/pi-cliproxyapi-bundle.git
+	branch = main
