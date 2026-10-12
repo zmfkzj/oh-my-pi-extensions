@@ -4,7 +4,7 @@ Ten bundled packages for Pi:
 
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
 - **[browser/](https://github.com/zmfkzj/pi-browser)** — git submodule for browser tools, backed by the obscura headless browser's stdio MCP server. The binary is not bundled.
-- **[@amaster.ai/pi-computer-use](https://www.npmjs.com/package/@amaster.ai/pi-computer-use)** — npm dependency for desktop automation of the user's own (physical) desktop.
+- **[@amaster.ai/pi-computer-use](https://www.npmjs.com/package/@amaster.ai/pi-computer-use)** — npm dependency for desktop automation of the user's own (physical) desktop, loaded on demand (see [Physical-desktop tools on demand](#physical-desktop-tools-on-demand)).
 - **[pi-gui/](https://github.com/zmfkzj/pi-gui)** — git submodule that gives each agent its own private KDE Wayland desktop: it registers [computer-use-mcp](https://github.com/mirsella/computer-use-mcp) with Pi's built-in MCP, keeps calls off the physical desktop, and provides the `gui` capability for `orche_task` workers (one server process and private desktop per worker). Needs `kwin-wayland`, `kwin-common` and `xdg-desktop-portal-kde`; see `/gui doctor`.
 - **[pi-commit/](https://github.com/zmfkzj/pi-commit)** — git submodule to preview and explicitly confirm safe single or hunk-split Git commits via `/commit`.
 - **[session-bus/](https://github.com/zmfkzj/pi-session-bus)** — git submodule that lets separate local Pi sessions exchange messages over Unix sockets and wake each other.
@@ -50,6 +50,17 @@ pi install git:github.com/zmfkzj/pi-codegraph
 pi install git:github.com/zmfkzj/pi-cliproxyapi-bundle
 pi install npm:@router-for-me/pi-cliproxyapi-provider   # the provider alone; pi-cliproxyapi-bundle then loads nothing
 ```
+
+## Physical-desktop tools on demand
+
+The manifest loads `@amaster.ai/pi-computer-use` through `extensions/computer-use/index.js`, which runs the package unchanged and only changes how its tools start in the main session. On its own, the package declares its core set (14 `computer_use_*` tools plus `computer_use_tools`, about 51 KB of declaration JSON with its bundled manifest) in every request of every session, though most sessions never touch the user's screen. Here every driver tool is still registered at session start, but with Pi's `defaultActive: false`; only `computer_use_tools` (about 1 KB) is declared, now with a `core` group:
+
+- The model calls `computer_use_tools` with `group: "core"` (apps, window state, click, type, keys, scroll) when the user asks it to act on their own screen, and other groups (`browser`, `recording`, `session`, `cursor`, `window`, `clipboard`, `diagnostics`) as before. You can do the same with `/computer-use-tools core` (or a group name). Loaded tools are declared from the next request and stay loaded for the session, `/reload` included.
+- Tools that are not loaded are not callable, as the package's own inactive groups were. Loaded tools run the package's own code: its app-launch and high-risk confirmations, driver start-up and permissions are unchanged. On Linux, a driver that was unavailable at start still offers `computer_use_connect`; a successful connect loads the core set, as the package's start-up would have.
+- To restore the package's start-up behaviour, set `"loadOnDemand": false` in the `"pi-computer-use"` section of `~/.pi/agent/settings.json` (or `"toolProfile": "full"`, which the package already supports, for all tools).
+- This is only about the user's physical screen. pi-gui's private desktops (`mcp__computer_use__*`, `/gui`, `orche_task gui: true`) are separate and unchanged, and orche workers load neither.
+
+Measured with `node scripts/measure-tool-declarations.mjs` (Pi 1.1.0, orche plus the physical-desktop entry, faux model, first request; the package's bundled manifest, so Linux live schemas differ in size): declared tools 26 → 12, declaration JSON 65,672 → 15,646 characters, of which `computer_use_*` 15 tools / 51,163 → 1 tool / 1,027 characters. These are characters, not tokens or cost; the system prompt grew by 177 characters (the loader's guideline and orche's read guidance). Changes take effect after `pi update --extensions` (or a new `pi install`) and `/reload` or a new session.
 
 ## Update
 
