@@ -13,7 +13,7 @@ Ten bundled packages for Pi:
 - **[codegraph/](https://github.com/zmfkzj/pi-codegraph)** — git submodule that connects [CodeGraph](https://github.com/colbymchenry/codegraph)'s MCP server (`codegraph_explore`: source, call paths and blast radius in one call) through Pi's built-in MCP, adds `/codegraph status|init|sync`, and gives every orche worker and sub-worker its own CodeGraph connection (`codegraph` worker capability, read-only roles included). Needs the `codegraph` CLI (not bundled) and a per-project index (`/codegraph init`); an existing `codegraph` entry in `mcp.json` keeps precedence and is what workers use too.
 - **[cliproxyapi/](https://github.com/zmfkzj/pi-cliproxyapi-bundle)** — git submodule that loads the official CLIProxyAPI model provider [@router-for-me/pi-cliproxyapi-provider](https://github.com/router-for-me/pi-cliproxyapi-provider) (its own npm dependency, pinned by its `package-lock.json`: `/login CLIProxyAPI`, `/fast`, `/pause`, `/continue`, `/cliproxyapi-refresh`, TUI TPS footer), and skips it when the same package is also installed on its own in your settings, so it never loads twice. Needs a running CLIProxyAPI and its key.
 
-The root is a batch-install manifest, not an npm workspace. Each submodule keeps its own dependencies. Requires Node ≥22.19, git, and npm.
+The root is a batch-install manifest, not an npm workspace. Each submodule keeps its own dependencies. Requires Node ≥22.19, git, and npm. Every package uses the Pi that loads it (Pi's `@earendil-works/*` packages and `typebox` are host-provided; the submodules' peer ranges are `*`); the TypeScript submodules' own typechecks and tests run on Pi 1.2.0.
 
 ## Install
 
