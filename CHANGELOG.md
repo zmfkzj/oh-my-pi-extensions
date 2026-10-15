@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Dependency check and install commands: every bundled package has `doctor` and `install-deps` subcommands on its own command (`/orche`, `/browser`, `/gui`, `/commit`, `/bus`, `/workbench`, `/codegraph`, and the new `/images`, `/cliproxyapi`, `/computer-use`), and the umbrella's new `extensions/dependencies/` entry adds `/oh-my-pi doctor [package...]` and `/oh-my-pi install-deps [package...]`, which run them for all packages with a per-package section, an overall summary and remediation for every abnormal item. Packages answer on `pi.events` channel `oh-my-pi-extensions:dependencies` (each keeps its own copy of the contract); absent, throwing or timed-out packages are reported without hiding the others. Existing subcommands are unchanged; `/gui doctor` and `/workbench doctor` keep their content and now present the same items. Tests: `scripts/dependencies.test.mjs`, `scripts/dependencies-pi.test.mjs`, the packages' own suites; `npm test` at the root runs the root checks.
+
 ### Changed
 
 - Pi 1.2.0 (`@earendil-works/pi-coding-agent`): the Pi devDependencies and locks of every TypeScript submodule move to 1.2.0 (orche and codegraph, cliproxyapi from 1.1.0; pi-gui from 1.0.2; browser, pi-commit, images and session-bus from 1.0.0), so their typechecks and tests run on the Pi the packages now load in; peer ranges stay `*` and no runtime dependency changes. Pi 1.2.0 emits `before_agent_start` also for a run that a `triggerTurn` message starts while idle (`messageType: "custom"`) and counts a starting run as busy:

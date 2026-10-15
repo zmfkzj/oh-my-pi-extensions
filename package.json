@@ -5,7 +5,8 @@
   "type": "module",
   "keywords": ["pi-package"],
   "scripts": {
-    "postinstall": "node scripts/bootstrap.mjs"
+    "postinstall": "node scripts/bootstrap.mjs",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@amaster.ai/pi-computer-use": "^0.1.22"
@@ -22,7 +23,8 @@
       "./images/src/index.ts",
       "./pi-workbench/index.js",
       "./codegraph/src/index.ts",
-      "./cliproxyapi/src/index.ts"
+      "./cliproxyapi/src/index.ts",
+      "./extensions/dependencies/index.js"
     ]
   }
 }

@@ -88,11 +88,13 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.deepEqual(byExtension["pi-gui/src/index.ts"], ["gui"]);
   assert.deepEqual(byExtension["pi-commit/src/index.ts"], ["commit"]);
   assert.deepEqual(byExtension["session-bus/src/index.ts"], ["bus", "queue"]);
-  assert.deepEqual(byExtension["images/src/index.ts"], [], "the command-less images extension stays command-less");
+  assert.deepEqual(byExtension["images/src/index.ts"], ["images"], "images: its dependency doctor/install-deps command");
   assert.deepEqual(byExtension["pi-workbench/index.js"], ["workbench"]);
   assert.deepEqual(byExtension["codegraph/src/index.ts"], ["codegraph"]);
   // The official CLIProxyAPI provider, loaded through the bundle (no separate install in this agent dir).
-  assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi-refresh", "continue", "fast", "pause"]);
+  assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi", "cliproxyapi-refresh", "continue", "fast", "pause"]);
+  // The umbrella's dependency commands: the batch /oh-my-pi and the physical-desktop package's /computer-use.
+  assert.deepEqual(byExtension["extensions/dependencies/index.js"], ["computer-use", "oh-my-pi"]);
 
   // Names: no built-in conflict, no renamed duplicate, every one in the `/` menu exactly once next to the built-ins.
   for (const command of h.registered) {
@@ -110,9 +112,10 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/wor", "workbench"), "/workbench ");
   assert.equal(await h.complete("/codeg", "codegraph"), "/codegraph ");
   assert.equal(await h.complete("/cliproxyapi-r", "cliproxyapi-refresh"), "/cliproxyapi-refresh ");
+  assert.equal(await h.complete("/oh-", "oh-my-pi"), "/oh-my-pi ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
-  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph"]) {
+  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use", "oh-my-pi"]) {
     assert.equal(typeof h.registered.find(command => command.name === name)?.getArgumentCompletions, "function", `/${name} completes arguments`);
   }
   assert.equal(await h.complete("/browser engine c", "engine chrome"), "/browser engine chrome");
@@ -130,6 +133,13 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/workbench skill ponytail-r", "skill ponytail-review"), "/workbench skill ponytail-review");
   assert.equal(await h.complete("/codegraph sy", "sync"), "/codegraph sync");
   assert.equal(await h.complete("/codegraph i", "init"), "/codegraph init");
+  // Every package's dependency subcommands, and the umbrella's batch commands with package ids.
+  for (const command of ["browser", "orche", "commit", "bus", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use"]) {
+    assert.equal(await h.complete(`/${command} doc`, "doctor"), `/${command} doctor`, `/${command} doctor`);
+    assert.equal(await h.complete(`/${command} install-d`, "install-deps"), `/${command} install-deps`, `/${command} install-deps`);
+  }
+  assert.equal(await h.complete("/oh-my-pi d", "doctor"), "/oh-my-pi doctor");
+  assert.equal(await h.complete("/oh-my-pi install-deps br", "install-deps browser"), "/oh-my-pi install-deps browser");
 
   // Free text, unknown words and finished arguments get no suggestions, so Enter submits them.
   for (const line of ["/orche single fix the s", "/queue fix the lint", "/bus send peer hello", "/browser xyz", "/commit --model op", "/orche workers",
@@ -165,7 +175,7 @@ test("Tab with no candidate list open completes /workbench arguments through the
   assert.ok((await forced(h.provider, "/workbench use "))?.includes("alpha.txt"), "without the wrapper: the project's files");
   // With the wrapper: Workbench candidates at each argument position, never files.
   assert.equal(wrapped.shouldTriggerFileCompletion(["/workbench "], 0, 11), true);
-  assert.deepEqual(await forced(wrapped, "/workbench "), ["list", "use ", "skill ", "cancel", "status", "doctor", "help"]);
+  assert.deepEqual(await forced(wrapped, "/workbench "), ["list", "use ", "skill ", "cancel", "status", "doctor", "install-deps", "help"]);
   assert.deepEqual(await forced(wrapped, "/workbench use "), [...catalog.profiles.map(profile => `use ${profile.id}`), "use auto", "use off"]);
   assert.deepEqual(await forced(wrapped, "/workbench skill "), catalog.skills.map(skill => `skill ${skill.id}`));
   assert.deepEqual(await forced(wrapped, "/workbench list "), catalog.profiles.map(profile => `list ${profile.id}`));

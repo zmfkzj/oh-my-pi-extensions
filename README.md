@@ -51,6 +51,36 @@ pi install git:github.com/zmfkzj/pi-cliproxyapi-bundle
 pi install npm:@router-for-me/pi-cliproxyapi-provider   # the provider alone; pi-cliproxyapi-bundle then loads nothing
 ```
 
+## Dependency check and install
+
+Every bundled package has two subcommands on its own command, and the umbrella runs them for all packages at once:
+
+```text
+/oh-my-pi doctor [package...]         # check every package (or the named ones); never installs or repairs
+/oh-my-pi install-deps [package...]   # install what can be installed, report the rest as manual steps
+```
+
+Package ids: `orche`, `browser`, `computer-use`, `pi-gui`, `pi-commit`, `session-bus`, `images`, `pi-workbench`, `codegraph`, `cliproxyapi` (Tab completes them). The report has one section per package (`[id] label: outcome  (its own command)`), each item marked `[ok]`, `[installed]`, `[warn]` (optional feature), `[error]`, `[failed]`, `[manual]` or `[unverified]`, a `->` action under every abnormal item, and a summary line (`10 packages: 6 healthy, 1 abnormal, ...`) plus the list of packages that need attention. Packages are checked concurrently with a 60 s limit each, and installed one after another with a 15 min limit each; a package that throws, times out or is not loaded is reported as such, and the others' results still appear. `install-deps` ends with "run /reload" when something was installed.
+
+| Package | Own commands | doctor checks | install-deps installs automatically | Reported as manual |
+|---|---|---|---|---|
+| orche | `/orche doctor`, `/orche install-deps` | npm deps and that the native ones load (`@ast-grep/napi`, `sharp`), Node.js, git, `orche.config.json`, configured routes/models | missing npm deps (`npm install --legacy-peer-deps`) | Node.js, git, broken native bindings, models/credentials |
+| browser | `/browser doctor`, `/browser install-deps` | config, platform, glibc 2.35+, obscura (its own resolution order), optional Chrome engine | obscura (the verified `/browser install` download of the configured version), `chrome-devtools-mcp` | Chrome, broken binary overrides, unsupported platforms |
+| computer-use | `/computer-use doctor`, `/computer-use install-deps` | `@amaster.ai/pi-computer-use`, the platform's Cua Driver package and `cua-driver --version`, settings, Linux desktop session; permissions are unverified (need the running driver) | the npm package and driver (`npm install --legacy-peer-deps` in this checkout) | unsupported platform, `binaryPath`, desktop session, OS permissions |
+| pi-gui | `/gui doctor` (unchanged details and live smoke test, plus the report), `/gui install-deps` | Linux, `gui.config.json`, computer-use-mcp server, KDE Wayland services and KWin plugins, optional `/gui view` tools; the batch check never starts a desktop or runs `npx` | the bundled server npm package (Linux x64, glibc 2.39+) | `sudo apt install ...` lines, cargo build, other OSes |
+| pi-commit | `/commit doctor`, `/commit install-deps` | git ≥ 2.31, git identity, current work tree, planning model credentials | nothing (no npm runtime deps) | git, `git config` identity, `/login` |
+| session-bus | `/bus doctor`, `/bus install-deps` | POSIX sockets, bus directory and permissions, socket path length, receiving mode, optional git for `/queue` | nothing (no external packages) | Windows (unsupported), directory fixes |
+| images | `/images doctor`, `/images install-deps` | image model settings, CLIProxyAPI base URL, credentials (set/not set), gateway reachability (3 s) | nothing | CLIProxyAPI server and key |
+| pi-workbench | `/workbench doctor`, `/workbench install-deps` | bundled catalog/skills; optional skill tools and API-key variables (presence only) | `ast-grep` (`npm install -g @ast-grep/cli` only with a user-writable npm prefix), `uv` (`pipx install uv` only with pipx) | system tools, API keys, Python modules |
+| codegraph | `/codegraph doctor`, `/codegraph install-deps` | `mcp.json` entry, CodeGraph CLI and version, the project index (optional) | a missing CLI on Linux/macOS through upstream's `install.sh` (user-level, no sudo); never upgrades | Windows, permission errors, `/codegraph init` |
+| cliproxyapi | `/cliproxyapi doctor`, `/cliproxyapi install-deps` (also when the bundle loads nothing) | which provider install is active, the bundled npm package against its lock, base URL, key (set/not set), server reachability | the bundled provider package | CLIProxyAPI server, `/login CLIProxyAPI` |
+
+Rules every package follows: `doctor` only inspects (bounded subprocess and network probes, no installs, downloads, config writes or index creation); `install-deps` is safe to repeat (present items report `ok`/already available), re-checks what it installed, never runs `sudo`, never changes credentials or settings, and turns everything that needs privileges, credentials, logins, unsupported platforms or external services into a `manual` item with the exact command. Secrets are reported only as set/not set. npm installs run `npm install --legacy-peer-deps` in the package's own directory, as the bootstrap does, and are refused inside an npm-installed package (reinstall with `pi install`/`pi update --extensions` instead).
+
+A package that does not answer is shown as `not loaded` with the reason the files show: missing submodule files (`git submodule update --init <dir>`), missing npm dependencies (`/oh-my-pi install-deps <id>` installs them; then `/reload`), or a load error or settings filter (see Pi's startup output). Packages installed individually (`pi install git:github.com/zmfkzj/pi-browser`, ...) keep their own `doctor`/`install-deps` subcommands; `/oh-my-pi` and `/computer-use` come with this umbrella (`extensions/dependencies/`, Node built-ins only, so they load even when a package's dependencies are missing). Platforms are those of each package: Linux and macOS are covered throughout, Windows only where the package supports it (session-bus and pi-gui report it unsupported; system tools are manual). Each package's README describes its items in detail.
+
+Checks: `npm test` at the root runs `scripts/*.test.mjs`, including `scripts/dependencies.test.mjs` (aggregation, partial failures, time-outs, absent packages, computer-use with fake npm/driver) and `scripts/dependencies-pi.test.mjs` (all packages loaded in a real Pi session answer, and `/oh-my-pi doctor` and every package's `doctor` report through Pi; it inspects this machine read-only and runs no install).
+
 ## Physical-desktop tools on demand
 
 The manifest loads `@amaster.ai/pi-computer-use` through `extensions/computer-use/index.js`, which runs the package unchanged and only changes how its tools start in the main session. On its own, the package declares its core set (14 `computer_use_*` tools plus `computer_use_tools`, about 51 KB of declaration JSON with its bundled manifest) in every request of every session, though most sessions never touch the user's screen. Here every driver tool is still registered at session start, but with Pi's `defaultActive: false`; only `computer_use_tools` (about 1 KB) is declared, now with a `core` group:
