@@ -9,19 +9,11 @@ import { collectProviders, PACKAGES } from "../extensions/dependencies/umbrella.
 import { findPi, manifestExtensions, startPiSession } from "./pi-harness.mjs";
 
 const found = findPi();
-const skip = found ? false : "Pi (@earendil-works/pi-coding-agent with pi-ai) not found; set PI_CODING_AGENT_DIR";
 const STATUS = /^ {2}\[(ok|installed|warn|error|failed|manual|unverified)\] /;
 
-test("every bundled package answers the umbrella, and /oh-my-pi doctor and each package's doctor report through Pi", { skip, timeout: 600_000 }, async (t) => {
-  const saved = { CLIPROXYAPI_BASE_URL: process.env.CLIPROXYAPI_BASE_URL, CLIPROXYAPI_API_KEY: process.env.CLIPROXYAPI_API_KEY };
-  // The CLIProxyAPI provider and images read this closed local URL and no key: no real request leaves the machine.
-  process.env.CLIPROXYAPI_BASE_URL = "http://127.0.0.1:9";
-  delete process.env.CLIPROXYAPI_API_KEY;
+test("every bundled package answers the umbrella, and /oh-my-pi doctor and each package's doctor report through Pi", { timeout: 600_000 }, async (t) => {
   const h = await startPiSession(found, { extensionPaths: manifestExtensions(() => true) });
-  t.after(async () => {
-    await h.dispose();
-    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-  });
+  t.after(() => h.dispose());
   assert.deepEqual(h.loader.getExtensions().errors, []);
 
   // The providers, through Pi's shared event bus (the dependencies extension's own `pi.events`).
@@ -52,8 +44,12 @@ test("every bundled package answers the umbrella, and /oh-my-pi doctor and each 
   // Each package's own doctor subcommand, through Pi.
   for (const pkg of PACKAGES) {
     const before = h.notifications.length;
+    const entriesBefore = h.session.sessionManager.getEntries().length;
     await h.session.prompt(`${pkg.command} doctor`);
-    const own = h.notifications.slice(before).map(notification => notification.message).join("\n");
+    // Workbench's TUI output is a renderable transcript entry, not a notification.
+    const records = h.session.sessionManager.getEntries().slice(entriesBefore)
+      .filter(entry => entry.type === "custom" && entry.customType === "pi-workbench.command-output").map(entry => entry.data.text);
+    const own = [...h.notifications.slice(before).map(notification => notification.message), ...records].join("\n");
     assert.match(own, new RegExp(`${pkg.label} doctor: `), `${pkg.command} doctor: ${own.slice(0, 300)}`);
   }
 });

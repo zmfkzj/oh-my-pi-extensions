@@ -6,7 +6,10 @@
   "keywords": ["pi-package"],
   "scripts": {
     "postinstall": "node scripts/bootstrap.mjs",
-    "test": "node --test scripts/*.test.mjs"
+    "pretest": "node scripts/pi-versions.mjs",
+    "test": "node --test scripts/*.test.mjs",
+    "test:compat": "node scripts/pi-compat.mjs",
+    "test:install": "node scripts/verify-install.mjs"
   },
   "dependencies": {
     "@amaster.ai/pi-computer-use": "^0.1.22"

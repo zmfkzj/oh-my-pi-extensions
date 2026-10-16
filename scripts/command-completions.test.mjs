@@ -1,56 +1,21 @@
 // Integration check of every command the bundled extensions add: loads package.json's `pi.extensions` with Pi's own resource loader
 // and session, then builds the slash-command autocomplete exactly as Pi's interactive mode does (built-ins first, extension commands
 // under their invocation name, built-in name conflicts skipped) and drives it through Pi's CombinedAutocompleteProvider.
-// Pi itself is not a dependency of this manifest: set PI_CODING_AGENT_DIR, or the `pi` on PATH or a submodule's copy is used.
+// The shared harness requires an exact SDK version, isolated credentials and fail-closed initialization cleanup.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PI_NAME = "@earendil-works/pi-coding-agent";
-
-function isPiPackage(dir) {
-  try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name === PI_NAME && existsSync(join(dir, "dist/index.js")); } catch { return false; }
-}
-function findPi() {
-  const candidates = [];
-  if (process.env.PI_CODING_AGENT_DIR) candidates.push(process.env.PI_CODING_AGENT_DIR);
-  try {
-    let dir = dirname(realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim()));
-    for (let i = 0; i < 6; i++, dir = dirname(dir)) candidates.push(dir);
-  } catch { /* no pi on PATH */ }
-  for (const sub of ["orche", "pi-gui", "pi-commit", "browser", "session-bus"]) candidates.push(join(root, sub, "node_modules", PI_NAME));
-  const dir = candidates.find(isPiPackage);
-  if (!dir) return undefined;
-  const tui = [join(dir, "..", "pi-tui"), join(dir, "node_modules/@earendil-works/pi-tui")].find(path => existsSync(join(path, "dist/index.js")));
-  return tui && existsSync(join(dir, "dist/core/slash-commands.js")) ? { dir, tui } : undefined;
-}
+import { pathToFileURL } from "node:url";
+import { findPi, manifestExtensions, root, startPiSession } from "./pi-harness.mjs";
 
 const found = findPi();
 const load = async () => {
-  const pi = await import(pathToFileURL(join(found.dir, "dist/index.js")).href);
+  assert.ok(found.tui, "mandatory Pi autocomplete validation requires pi-tui");
   const { CombinedAutocompleteProvider } = await import(pathToFileURL(join(found.tui, "dist/index.js")).href);
   const { BUILTIN_SLASH_COMMANDS } = await import(pathToFileURL(join(found.dir, "dist/core/slash-commands.js")).href);
-  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const cwd = mkdtempSync(join(tmpdir(), "pi-command-completions-"));
-  const agentDir = join(cwd, "agent");
-  // Extensions that read Pi's agent dir (the bundled CLIProxyAPI provider: settings, cliproxyapi.json, model cache) read this
-  // empty one, not the user's; the provider then has no credentials and a closed local base URL, so it makes no real request.
-  const savedEnv = Object.fromEntries(["PI_CODING_AGENT_DIR", "CLIPROXYAPI_BASE_URL", "CLIPROXYAPI_API_KEY"].map(key => [key, process.env[key]]));
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  process.env.CLIPROXYAPI_BASE_URL = "http://127.0.0.1:9";
-  delete process.env.CLIPROXYAPI_API_KEY;
-  const settingsManager = pi.SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new pi.DefaultResourceLoader({
-    cwd, agentDir, settingsManager, additionalExtensionPaths: manifest.pi.extensions.map(path => resolve(root, path)),
-    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-  });
-  await loader.reload();
-  const { session } = await pi.createAgentSession({ cwd, agentDir, resourceLoader: loader, settingsManager, sessionManager: pi.SessionManager.inMemory(cwd) });
+  const h = await startPiSession(found, { extensionPaths: manifestExtensions(() => true), bind: false });
+  const { session, loader, cwd } = h;
   const builtins = new Set(BUILTIN_SLASH_COMMANDS.map(command => command.name));
   const registered = session.extensionRunner.getRegisteredCommands();
   const commands = [
@@ -67,19 +32,12 @@ const load = async () => {
     assert.ok(item, `${JSON.stringify(line)} offers ${JSON.stringify(suggestions.items.map(candidate => candidate.value))}, not ${JSON.stringify(value)}`);
     return provider.applyCompletion([line], 0, line.length, item, suggestions.prefix).lines[0];
   };
-  const dispose = () => {
-    session.dispose();
-    for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-    rmSync(cwd, { recursive: true, force: true });
-  };
-  return { loader, registered, builtins, commands, provider, cwd, suggest, complete, dispose };
+  return { loader, registered, builtins, commands, provider, cwd, suggest, complete, dispose: h.dispose };
 };
 
-test("bundled extension commands are listed and complete in Pi's slash-command autocomplete", { skip: found ? false : "Pi (@earendil-works/pi-coding-agent with pi-tui) not found; set PI_CODING_AGENT_DIR", timeout: 120_000 }, async (t) => {
-  const prev = process.env.PI_OFFLINE;
-  process.env.PI_OFFLINE = "1";
+test("bundled extension commands are listed and complete in Pi's slash-command autocomplete", { timeout: 120_000 }, async (t) => {
   const h = await load();
-  t.after(() => { h.dispose(); if (prev === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = prev; });
+  t.after(() => h.dispose());
 
   assert.deepEqual(h.loader.getExtensions().errors, []);
   const byExtension = Object.fromEntries(h.loader.getExtensions().extensions.map(extension => [extension.path.slice(root.length + 1), [...extension.commands.keys()].sort()]));
@@ -149,11 +107,9 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   }
 });
 
-test("Tab with no candidate list open completes /workbench arguments through the wrapper Workbench registers, and leaves the rest to Pi", { skip: found ? false : "Pi (@earendil-works/pi-coding-agent with pi-tui) not found; set PI_CODING_AGENT_DIR", timeout: 120_000 }, async (t) => {
-  const prev = process.env.PI_OFFLINE;
-  process.env.PI_OFFLINE = "1";
+test("Tab with no candidate list open completes /workbench arguments through the wrapper Workbench registers, and leaves the rest to Pi", { timeout: 120_000 }, async (t) => {
   const h = await load();
-  t.after(() => { h.dispose(); if (prev === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = prev; });
+  t.after(() => h.dispose());
   writeFileSync(join(h.cwd, "alpha.txt"), "a\n");
 
   // The factory the loaded Workbench extension registers from its session_start handler through ctx.ui.addAutocompleteProvider;

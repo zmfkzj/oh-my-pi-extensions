@@ -119,7 +119,6 @@ test("unit: opt-out passes upstream through unchanged; other tools and commands 
 // ------------------------------------------------------------------------------- real Pi sessions (Pi's loader)
 
 const found = findPi();
-const skip = found ? false : "Pi (@earendil-works/pi-coding-agent with pi-ai) not found; set PI_CODING_AGENT_DIR";
 const entry = manifestExtensions(path => path.includes("computer-use"));
 const MISSING_DRIVER = { mode: "path", binaryPath: "/nonexistent/cua-driver" };
 const physical = (tools) => tools.map(tool => tool.name).filter(name => name.startsWith("computer_use_"));
@@ -131,7 +130,7 @@ test("manifest: the physical-desktop entry is the on-demand wrapper, not the pac
   assert.deepEqual(entry.map(path => path.slice(path.lastIndexOf("/extensions/"))), ["/extensions/computer-use/index.js"]);
 });
 
-test("Pi session: only the loader is declared; core, groups and calls work after loading; unloaded tools are not callable; reload keeps them", { skip, timeout: 120_000 }, async (t) => {
+test("Pi session: only the loader is declared; core, groups and calls work after loading; unloaded tools are not callable; reload keeps them", { timeout: 120_000 }, async (t) => {
   const h = await startPiSession(found, {
     extensionPaths: entry, platform: "darwin", settings: { "pi-computer-use": MISSING_DRIVER },
     steps: ai => [
@@ -172,7 +171,7 @@ test("Pi session: only the loader is declared; core, groups and calls work after
   assert.deepEqual(h.session.getActiveToolNames().filter(name => name.startsWith("computer_use_")).sort(), loadedBefore);
 });
 
-test("Pi session: /computer-use-tools core loads the core set; completions offer core", { skip, timeout: 120_000 }, async (t) => {
+test("Pi session: /computer-use-tools core loads the core set; completions offer core", { timeout: 120_000 }, async (t) => {
   const h = await startPiSession(found, { extensionPaths: entry, platform: "darwin", settings: { "pi-computer-use": MISSING_DRIVER } });
   t.after(() => h.dispose());
   const command = h.session.extensionRunner.getRegisteredCommands().find(item => item.name === "computer-use-tools");
@@ -182,7 +181,7 @@ test("Pi session: /computer-use-tools core loads the core set; completions offer
   assert.ok(h.notifications.some(item => /Loaded the core computer-use tools \(14\)/.test(item.message)));
 });
 
-test("Pi session: opting out restores upstream's start-up core set", { skip, timeout: 120_000 }, async (t) => {
+test("Pi session: opting out restores upstream's start-up core set", { timeout: 120_000 }, async (t) => {
   const h = await startPiSession(found, {
     extensionPaths: entry, platform: "darwin", settings: { "pi-computer-use": { ...MISSING_DRIVER, loadOnDemand: false } },
     steps: ai => [ai.fauxAssistantMessage("OK")],
@@ -193,7 +192,7 @@ test("Pi session: opting out restores upstream's start-up core set", { skip, tim
   assert.match(h.requests[0].tools.find(tool => tool.name === LOADER).description, /^List and activate additional computer-use tool groups/);
 });
 
-test("Pi session (Linux path): failed discovery keeps the recovery surface; loading core then asks for a connect", { skip, timeout: 120_000 }, async (t) => {
+test("Pi session (Linux path): failed discovery keeps the recovery surface; loading core then asks for a connect", { timeout: 120_000 }, async (t) => {
   const h = await startPiSession(found, {
     extensionPaths: entry, settings: { "pi-computer-use": MISSING_DRIVER },
     steps: ai => [call(ai, LOADER, { group: CORE_GROUP }), call(ai, CONNECT, {}), ai.fauxAssistantMessage("done")],

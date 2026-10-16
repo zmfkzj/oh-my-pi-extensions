@@ -5,9 +5,8 @@ import test from "node:test";
 import { declarationSize, findPi, manifestExtensions, startPiSession } from "./pi-harness.mjs";
 
 const found = findPi();
-const skip = found ? false : "Pi (@earendil-works/pi-coding-agent with pi-ai) not found; set PI_CODING_AGENT_DIR";
 
-test("main session: read's narrowing guidance and outline-first rule are declared; physical-desktop tools are not until loaded", { skip, timeout: 120_000 }, async (t) => {
+test("main session: read's narrowing guidance and outline-first rule are declared; physical-desktop tools are not until loaded", { timeout: 120_000 }, async (t) => {
   const h = await startPiSession(found, {
     extensionPaths: manifestExtensions(path => path.includes("computer-use") || path.startsWith("./orche/")), platform: "darwin",
     settings: { "pi-computer-use": { mode: "path", binaryPath: "/nonexistent/cua-driver" } },
