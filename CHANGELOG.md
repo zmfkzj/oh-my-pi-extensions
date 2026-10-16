@@ -10,6 +10,8 @@
 
 ### Changed
 
+- Session-bus × orche: a note from another Pi session that arrives while an orche background job runs (delegating modes) now goes straight to the running worker without a confirmation dialog. pi-session-bus offers genuine received notes on the new `session-bus:route` event before waking the session; pi-orche claims a note once its worker accepted it, frames it as untrusted peer input that grants nothing, and main gets an informational, non-waking copy it must not relay. User/main-originated `orche_task_message`, cancel and new-task approval still ask the user. Unclaimed notes (no job, refused hand-off, wake off, hop or rate limit) are delivered as before; routed notes count toward the wake rate. Tests: `session-bus/test/extension/wiring.test.ts`, `session-bus/test/core/policy.test.ts`, `orche/test/extension/task-peer-notes.test.ts`.
+
 - Pi development dependencies and locks of all eight TypeScript packages now target **1.3.0**; host-provided `*` peers remain unchanged. CLIProxyAPI provider remains 1.4.22 and physical computer-use remains 0.1.22. A separate 1.2.0 smoke remains passing; a full older-version matrix is not claimed.
 - Browser initialization no longer drops search-enabled/restored deferred tools on resume or reload. Fresh defaults remain unchanged; recorded exposure transitions and explicit negative tool-selection settings are respected without clearing other extensions' late restoration.
 - Orche refreshes mode restrictions for late/restored tools before requests and after turns, drops stale one-turn overrides on session restoration, and retains suppressed tools until registration. Deterministic real-host tests cover forbidden direct and nested calls.
