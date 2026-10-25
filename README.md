@@ -2,7 +2,7 @@
 
 Eleven bundled packages for Pi:
 
-- **[pi-tmp/](https://github.com/zmfkzj/pi-tmp)** — git submodule that points Pi's temporary directory (`TMPDIR`, `os.tmpdir()`, child processes) at a private on-disk directory, `/var/tmp/pi-<user>` (or `$PI_TMP_DIR`), instead of a RAM-backed `/tmp` whose per-user tmpfs quota can make writes fail with `EDQUOT`. It is the manifest's first extension, so the packages after it (orche scratch, the CLIProxyAPI provider's patched-module cache, bash tool output files) already see the new directory when their modules load. It has no dependencies and no command (not part of `/oh-my-pi`).
+- **[pi-tmp/](https://github.com/zmfkzj/pi-tmp)** — git submodule that points Pi's temporary directory (`TMPDIR`, `os.tmpdir()`, child processes) at a private on-disk directory, `/var/tmp/pi-${USER}` (or `$PI_TMP_DIR`), instead of a RAM-backed `/tmp` whose per-user tmpfs quota can make writes fail with `EDQUOT`. It is the manifest's first extension, so the packages after it (orche scratch, the CLIProxyAPI provider's patched-module cache, bash tool output files) already see the new directory when their modules load. It has no dependencies and no command (not part of `/oh-my-pi`).
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
 - **[browser/](https://github.com/zmfkzj/pi-browser)** — git submodule for browser tools, backed by the obscura headless browser's stdio MCP server. The binary is not bundled.
 - **[@amaster.ai/pi-computer-use](https://www.npmjs.com/package/@amaster.ai/pi-computer-use)** — npm dependency for desktop automation of the user's own (physical) desktop, loaded on demand (see [Physical-desktop tools on demand](#physical-desktop-tools-on-demand)).
