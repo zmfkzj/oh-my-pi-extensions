@@ -1,4 +1,4 @@
-// Required Pi 1.3.0 gate. Does not install/upgrade packages or modify the user's Pi data; every suite runs in an isolated
+// Required Pi 1.4.0 gate. Does not install/upgrade packages or modify the user's Pi data; every suite runs in an isolated
 // HOME/agent directory. Optional live integrations keep their own explicit skips; every local suite here is mandatory.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { checkPiVersions, packages, root } from "./pi-versions.mjs";
 import { findPi, PI_VERSION } from "./pi-harness.mjs";
 
-assert.equal(PI_VERSION, "1.3.0", "test:compat is the mandatory 1.3.0 gate; use individual tests for another host version");
+assert.equal(PI_VERSION, "1.4.0", "test:compat is the mandatory 1.4.0 gate; use individual tests for another host version");
 const versions = checkPiVersions();
 const found = findPi();
 const logs = process.env.OMP_COMPAT_LOG_DIR ? resolve(process.env.OMP_COMPAT_LOG_DIR) : mkdtempSync(join(tmpdir(), "omp-compat-"));
@@ -16,7 +16,7 @@ mkdirSync(logs, { recursive: true });
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (/API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL/.test(key)) delete env[key];
 for (const key of ["LIVE_IMAGES", "BROWSER_RUN_INTEGRATION", "BROWSER_RUN_CHROME_INTEGRATION", "ORCHE_RUN_LIVE", "PI_WORKBENCH_AI_MODULE", "PI_WORKBENCH_TUI_MODULE"]) delete env[key];
-Object.assign(env, { PI_OFFLINE: "1", OMP_PI_VERSION: "1.3.0", OMP_PI_DIR: found.dir,
+Object.assign(env, { PI_OFFLINE: "1", OMP_PI_VERSION: "1.4.0", OMP_PI_DIR: found.dir,
   PI_WORKBENCH_HOST_MODULE: join(found.dir, "dist/index.js"),
   SESSION_BUS_SMOKE: "1", SESSION_BUS_PI: join(found.dir, "dist/cli.js"),
   HOME: join(logs, "home"), XDG_CONFIG_HOME: join(logs, "config"),
@@ -74,4 +74,4 @@ await run("workbench-editor", join(root, "pi-workbench"), ["run", "test:pi-edito
 // Assert the runner itself has not accidentally omitted a required entrypoint/package suite.
 assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length, 11);
 assert.equal(results.length, 20);
-console.log(`\nPi 1.3.0 gate: ${results.filter(result => result.status === 0).length}/${results.length} commands passed. Evidence: ${logs}/results.json`);
+console.log(`\nPi 1.4.0 gate: ${results.filter(result => result.status === 0).length}/${results.length} commands passed. Evidence: ${logs}/results.json`);

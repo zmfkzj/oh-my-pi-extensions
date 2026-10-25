@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PI_NAME = "@earendil-works/pi-coding-agent";
 /** The Pi version these checks validate; OMP_PI_VERSION selects another (for example an older Pi still supported). */
-export const PI_VERSION = process.env.OMP_PI_VERSION || "1.3.0";
+export const PI_VERSION = process.env.OMP_PI_VERSION || "1.4.0";
 
 const versionOf = (dir) => { try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).version; } catch { return undefined; } };
 function isPiPackage(dir) {

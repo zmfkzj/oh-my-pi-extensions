@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { findPi, startPiSession } from "./pi-harness.mjs";
+import { findPi, PI_VERSION, startPiSession } from "./pi-harness.mjs";
 
 const found = findPi();
 function env(t, key, value) {
@@ -14,7 +14,7 @@ test("explicit invalid SDK fails instead of using PATH or a submodule", t => {
   env(t, "OMP_PI_DIR", "/nonexistent/required-pi-sdk");
   assert.throws(findPi, /not a .*pi-coding-agent package/);
 });
-test("explicit 1.2.0 or mixed SDK/AI versions fail required validation", t => {
+test("explicit older or mixed SDK/AI versions fail required validation", t => {
   const root = mkdtempSync(join(tmpdir(), "pi-version-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const host = join(root, "pi-coding-agent");
@@ -24,8 +24,8 @@ test("explicit 1.2.0 or mixed SDK/AI versions fail required validation", t => {
     writeFileSync(join(root, name, "package.json"), JSON.stringify({ name: `@earendil-works/${name}`, version: "1.2.0" }));
   }
   env(t, "OMP_PI_DIR", host);
-  assert.throws(findPi, /1\.2\.0.*these checks validate Pi 1\.3\.0/);
-  writeFileSync(join(host, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "1.3.0" }));
+  assert.throws(findPi, new RegExp(`1\\.2\\.0.*these checks validate Pi ${PI_VERSION.replaceAll(".", "\\.")}`));
+  writeFileSync(join(host, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: PI_VERSION }));
   assert.throws(findPi, /pi-ai 1\.2\.0/);
 });
 test("initialization failure restores environment, fetch and temporary files", async () => {

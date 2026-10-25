@@ -9,13 +9,13 @@ import { dirname, join, resolve } from "node:path";
 import { findPi, root } from "./pi-harness.mjs";
 
 const found = findPi();
-assert.equal(found.version, "1.3.0");
+assert.equal(found.version, "1.4.0");
 const base = resolve(process.env.OMP_INSTALL_TEST_DIR || tmpdir());
 mkdirSync(base, { recursive: true });
 const sandbox = mkdtempSync(join(base, "pi-install-")), artifact = join(sandbox, "artifact");
 mkdirSync(artifact);
 const env = { PATH: process.env.PATH, HOME: join(sandbox, "home"), TMPDIR: join(sandbox, "tmp"),
-  PI_OFFLINE: "1", OMP_PI_VERSION: "1.3.0", OMP_PI_DIR: found.dir, npm_config_omit: "dev",
+  PI_OFFLINE: "1", OMP_PI_VERSION: "1.4.0", OMP_PI_DIR: found.dir, npm_config_omit: "dev",
   npm_config_offline: "true", npm_config_audit: "false", npm_config_fund: "false",
   npm_config_cache: process.env.OMP_INSTALL_NPM_CACHE || join(sandbox, "npm-cache"),
   PI_CODING_AGENT_DIR: join(sandbox, "agent"), PI_AGENT_HOME: join(sandbox, "agent"),
@@ -53,7 +53,7 @@ function unchanged() {
     assert.equal(createHash("sha256").update(readFileSync(join(artifact, file))).digest("hex"), hash, `installed source changed: ${file}`);
   }
 }
-const checks = ["command-completions", "browser-lifecycle", "main-tool-surface", "mcp-lifecycle", "images-pi", "workbench-bus"];
+const checks = ["command-completions", "browser-lifecycle", "main-tool-surface", "mcp-lifecycle", "images-pi", "workbench-bus", "restore-installed-later"];
 for (const stage of ["fresh", "reinstall-after-clean"]) {
   if (stage !== "fresh") for (const sub of ["", ...subs]) rmSync(join(artifact, sub, "node_modules"), { recursive: true, force: true });
   const installed = exec(artifact, "npm", ["ci", "--omit=dev", "--legacy-peer-deps", "--offline"]);

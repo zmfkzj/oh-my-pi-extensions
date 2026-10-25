@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packages = ["orche", "browser", "pi-gui", "pi-commit", "session-bus", "images", "codegraph", "cliproxyapi"];
 const json = path => JSON.parse(readFileSync(path, "utf8"));
-export function checkPiVersions(expected = "1.3.0") {
+export function checkPiVersions(expected = "1.4.0") {
   const evidence = [];
   for (const sub of packages) {
     const dir = join(root, sub), manifest = json(join(dir, "package.json"));
@@ -27,7 +27,7 @@ export function checkPiVersions(expected = "1.3.0") {
         assert.ok(bunLock.includes(`"${name}": ["${name}@${expected}"`), `bun.lock resolution ${name}`);
       }
     }
-    // Resolve as the suite does; no silent global SDK and no host 1.3 + AI 1.2 split.
+    // Resolve as the suite does; no silent global SDK and no host 1.4 + AI 1.3 split.
     for (const name of new Set([...dev.map(([name]) => name), "@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"])) {
       const entry = realpathSync(findPackageJSON(name, pathToFileURL(join(dir, "package.json"))));
       const actual = json(entry);
