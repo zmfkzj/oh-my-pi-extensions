@@ -81,9 +81,11 @@ export async function startPiSession(found, {
     PI_CODING_AGENT_DIR: agentDir, PI_AGENT_HOME: agentDir, PI_OFFLINE: "1",
     XDG_RUNTIME_DIR: join(cwd, "run"), PI_SESSION_BUS_DIR: join(agentDir, "session-bus"),
     CLIPROXYAPI_BASE_URL: "http://127.0.0.1:9", CLIPROXYAPI_API_KEY: "", PI_CLIPROXYAPI_BUNDLED: "on",
+    // pi-tmp (first in the manifest) sets process.env.TMPDIR; keep it inside this session's scratch.
+    PI_TMP_DIR: join(cwd, "pi-tmp"),
     ...env,
   };
-  const savedEnv = Object.fromEntries(Object.keys(environment).map(key => [key, process.env[key]]));
+  const savedEnv = Object.fromEntries([...Object.keys(environment), "TMPDIR"].map(key => [key, process.env[key]]));
   const realFetch = globalThis.fetch;
   const blockedRequests = [];
   let runtime, partialSession, runtimeFd, disposed = false;

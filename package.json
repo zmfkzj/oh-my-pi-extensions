@@ -17,6 +17,7 @@
   "pi": {
     "skills": ["./browser/skills", "./pi-gui/node_modules/@mirsella/opencode-computer-use-mcp/skills", "./pi-workbench/skills"],
     "extensions": [
+      "./pi-tmp/index.js",
       "./orche/src/extension/index.ts",
       "./browser/src/extension/index.ts",
       "./extensions/computer-use/index.js",

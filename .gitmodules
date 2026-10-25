@@ -34,3 +34,7 @@
 	path = cliproxyapi
 	url = https://github.com/zmfkzj/pi-cliproxyapi-bundle.git
 	branch = main
+[submodule "pi-tmp"]
+	path = pi-tmp
+	url = https://github.com/zmfkzj/pi-tmp.git
+	branch = main

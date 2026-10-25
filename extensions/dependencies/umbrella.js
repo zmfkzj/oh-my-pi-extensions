@@ -10,7 +10,8 @@ import {
 } from "./contract.js";
 
 /**
- * Every package of the root manifest's `pi.extensions` (the dependencies extension itself excepted), in manifest order.
+ * Every package of the root manifest's `pi.extensions`, in manifest order, except the dependencies extension itself and
+ * pi-tmp (no dependencies, no command; it only sets TMPDIR).
  * `dir` is relative to the umbrella root; `entry` is the manifest path.
  */
 export const PACKAGES = Object.freeze([

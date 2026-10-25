@@ -38,10 +38,11 @@ function tempDir(t, prefix) {
 const provider = (id, check, install = check) => ({ id, label: `pkg-${id}`, command: `/${id}`, check: check ?? install, install });
 const report = (...items) => ({ items });
 
-test("the package table is the root manifest's extensions, the dependencies entry aside", () => {
+test("the package table is the root manifest's extensions, the dependencies and pi-tmp entries aside", () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
-  assert.deepEqual(PACKAGES.map(pkg => pkg.entry), manifest.pi.extensions.filter(path => path !== "./extensions/dependencies/index.js"));
-  assert.ok(manifest.pi.extensions.includes("./extensions/dependencies/index.js"));
+  const aside = ["./extensions/dependencies/index.js", "./pi-tmp/index.js"];
+  assert.deepEqual(PACKAGES.map(pkg => pkg.entry), manifest.pi.extensions.filter(path => !aside.includes(path)));
+  for (const entry of aside) assert.ok(manifest.pi.extensions.includes(entry), entry);
   assert.equal(new Set(PACKAGES.map(pkg => pkg.id)).size, 10);
 });
 

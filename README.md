@@ -1,7 +1,8 @@
 # oh-my-pi-extensions
 
-Ten bundled packages for Pi:
+Eleven bundled packages for Pi:
 
+- **[pi-tmp/](https://github.com/zmfkzj/pi-tmp)** — git submodule that points Pi's temporary directory (`TMPDIR`, `os.tmpdir()`, child processes) at a private on-disk directory, `/var/tmp/pi-<user>` (or `$PI_TMP_DIR`), instead of a RAM-backed `/tmp` whose per-user tmpfs quota can make writes fail with `EDQUOT`. It is the manifest's first extension, so the packages after it (orche scratch, the CLIProxyAPI provider's patched-module cache, bash tool output files) already see the new directory when their modules load. It has no dependencies and no command (not part of `/oh-my-pi`).
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
 - **[browser/](https://github.com/zmfkzj/pi-browser)** — git submodule for browser tools, backed by the obscura headless browser's stdio MCP server. The binary is not bundled.
 - **[@amaster.ai/pi-computer-use](https://www.npmjs.com/package/@amaster.ai/pi-computer-use)** — npm dependency for desktop automation of the user's own (physical) desktop, loaded on demand (see [Physical-desktop tools on demand](#physical-desktop-tools-on-demand)).
@@ -23,7 +24,7 @@ Local checkout:
 git clone --recurse-submodules https://github.com/zmfkzj/oh-my-pi-extensions.git
 cd oh-my-pi-extensions && npm install --legacy-peer-deps
 pi install /path/to/oh-my-pi-extensions
-# Or try all ten without saving:
+# Or try all eleven without saving:
 pi -e /path/to/oh-my-pi-extensions
 ```
 
@@ -39,6 +40,7 @@ pi update --extensions   # later: update installed packages
 Or install individual packages:
 
 ```sh
+pi install git:github.com/zmfkzj/pi-tmp       # install it first: it only affects packages loaded after it
 pi install git:github.com/zmfkzj/pi-orche
 pi install git:github.com/zmfkzj/pi-browser
 pi install git:github.com/zmfkzj/pi-commit
@@ -53,7 +55,7 @@ pi install npm:@router-for-me/pi-cliproxyapi-provider   # the provider alone; pi
 
 ## Dependency check and install
 
-Every bundled package has two subcommands on its own command, and the umbrella runs them for all packages at once:
+Every bundled package except pi-tmp (nothing to install or check) has two subcommands on its own command, and the umbrella runs them for all packages at once:
 
 ```text
 /oh-my-pi doctor [package...]         # check every package (or the named ones); never installs or repairs
@@ -104,7 +106,7 @@ git pull && git submodule update --init --remote
 
 Alternatively, after `git pull`, rerun `npm install --legacy-peer-deps` to bootstrap the umbrella's recorded commits and missing dependencies. Bootstrap only syncs clean, detached submodules; branch checkouts or dirty worktrees are left untouched.
 
-The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-commit, session-bus, pi-gui, pi-workbench, images, codegraph and cliproxyapi; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
+The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-tmp, pi-commit, session-bus, pi-gui, pi-workbench, images, codegraph and cliproxyapi; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
 
 The CLIProxyAPI provider has its own update path: the `cliproxyapi/` submodule's repository (`zmfkzj/pi-cliproxyapi-bundle`) checks npm every 6 hours, updates its `package.json` and `package-lock.json` to a newer provider release, and commits that to `main` only after its typecheck and tests (including a Pi loader test) pass; the hourly workflow above then picks up the new gitlink. A separately installed provider (`npm:@router-for-me/pi-cliproxyapi-provider` in your settings) is updated by `pi update --extensions` instead. The CodeGraph CLI behind `codegraph/` is never updated by these packages: use `codegraph upgrade` (see [pi-codegraph](https://github.com/zmfkzj/pi-codegraph#versions-and-updates)).
 
