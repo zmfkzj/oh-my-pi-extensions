@@ -39,3 +39,6 @@
 - Added the pi-gui extension (private computer-use desktops per agent, `orche_task gui`) as a bundled submodule.
 - Added the pi-session-bus extension as a bundled submodule.
 
+### Fixed
+
+- cliproxyapi: the provider's patched Codex module can no longer be broken by its shared file cache. The official provider (1.4.24) writes `<tmpdir>/pi-cliproxyapi-provider/openai-codex-responses-cpa-<hash>.mjs` in place and imports it whenever it exists, so concurrent starts, an older bundle or a separate provider install rewriting that file, or a process killed mid-write could make it import an empty or partial module, after which every `cliproxyapi` request of that session failed. The bundle now computes the module with the provider's own functions and serves it to the provider's import from memory through Node module hooks, publishes the shared file atomically for other processes, refuses any other import from that cache, and does not load the provider when module hooks are unavailable (`cliproxyapi/src/codex-cache.ts`, `cliproxyapi/test/codex-cache.test.ts`).
