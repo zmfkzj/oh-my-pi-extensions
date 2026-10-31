@@ -2,8 +2,8 @@
 // HOME/agent directory. Optional live integrations keep their own explicit skips; every local suite here is mandatory.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkPiVersions, packages, root } from "./pi-versions.mjs";
 import { findPi, PI_VERSION } from "./pi-harness.mjs";
@@ -23,6 +23,9 @@ Object.assign(env, { PI_OFFLINE: "1", OMP_PI_VERSION: "1.4.0", OMP_PI_DIR: found
   npm_config_cache: join(logs, "npm-cache"), PYTHONDONTWRITEBYTECODE: "1",
   PI_CODING_AGENT_DIR: join(logs, "agent"), PI_AGENT_HOME: join(logs, "agent"), TMPDIR: join(logs, "tmp"),
   XDG_RUNTIME_DIR: join(logs, "runtime"), PI_SESSION_BUS_DIR: join(logs, "bus"),
+  // The isolated HOME isolates Pi data, not the toolchain: Python finds the user's site-packages through HOME, so keep
+  // the real user base for the mandatory workbench vendor CLI suites (python3 with NumPy and Pillow).
+  PYTHONUSERBASE: process.env.PYTHONUSERBASE || join(homedir(), ".local"),
 });
 for (const key of ["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR", "TMPDIR", "XDG_RUNTIME_DIR"]) mkdirSync(env[key], { recursive: true });
 let socketTmp = env.TMPDIR;
@@ -72,6 +75,9 @@ await run("workbench", join(root, "pi-workbench"), ["test"]);
 await run("workbench-session", join(root, "pi-workbench"), ["run", "test:pi-session"]);
 await run("workbench-editor", join(root, "pi-workbench"), ["run", "test:pi-editor"]);
 // Assert the runner itself has not accidentally omitted a required entrypoint/package suite.
-assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions.length, 11);
+// 12 entrypoints since pi-tmp (whose suite runs in the root `npm test`) became the first one; each must exist.
+const extensions = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions;
+assert.equal(extensions.length, 12);
+for (const entry of extensions) assert.ok(existsSync(join(root, entry)), `manifest extension missing: ${entry}`);
 assert.equal(results.length, 20);
 console.log(`\nPi 1.4.0 gate: ${results.filter(result => result.status === 0).length}/${results.length} commands passed. Evidence: ${logs}/results.json`);
