@@ -1,6 +1,6 @@
 # oh-my-pi-extensions
 
-Eleven bundled packages for Pi:
+Twelve bundled packages for Pi:
 
 - **[pi-tmp/](https://github.com/zmfkzj/pi-tmp)** — git submodule that points Pi's temporary directory (`TMPDIR`, `os.tmpdir()`, child processes) at a private on-disk directory, `/var/tmp/pi-${USER}` (or `$PI_TMP_DIR`), instead of a RAM-backed `/tmp` whose per-user tmpfs quota can make writes fail with `EDQUOT`. It is the manifest's first extension, so the packages after it (orche scratch, the CLIProxyAPI provider's patched-module cache, bash tool output files) already see the new directory when their modules load. It has no dependencies and no command (not part of `/oh-my-pi`).
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
@@ -13,6 +13,7 @@ Eleven bundled packages for Pi:
 - **[pi-workbench/](https://github.com/zmfkzj/pi-workbench)** — git submodule with on-demand `wb-*` skill routes (requirements, game, analysis, vision AI, manufacturing, coding, promo, research) and the `/workbench` profile command; the research profile bundles [Research Agent Skills](https://github.com/KalarisLabs/research-agent-skills) (MIT).
 - **[codegraph/](https://github.com/zmfkzj/pi-codegraph)** — git submodule that connects [CodeGraph](https://github.com/colbymchenry/codegraph)'s MCP server (`codegraph_explore`: source, call paths and blast radius in one call) through Pi's built-in MCP, adds `/codegraph status|init|sync`, and gives every orche worker and sub-worker its own CodeGraph connection (`codegraph` worker capability, read-only roles included). Needs the `codegraph` CLI (not bundled) and a per-project index (`/codegraph init`); an existing `codegraph` entry in `mcp.json` keeps precedence and is what workers use too.
 - **[cliproxyapi/](https://github.com/zmfkzj/pi-cliproxyapi-bundle)** — git submodule that loads the official CLIProxyAPI model provider [@router-for-me/pi-cliproxyapi-provider](https://github.com/router-for-me/pi-cliproxyapi-provider) (its own npm dependency, pinned by its `package-lock.json`: `/login CLIProxyAPI`, `/fast`, `/pause`, `/continue`, `/cliproxyapi-refresh`, TUI TPS footer), and skips it when the same package is also installed on its own in your settings, so it never loads twice. Needs a running CLIProxyAPI and its key.
+- **[pi-eval-loop/](https://github.com/zmfkzj/pi-eval-loop)** — git submodule with a headless, resumable, quality-first optimization loop for the pi-orche harness (`npm run eval:loop`, `/eval-loop status|report|doctor`). It runs sandboxed real-model evaluations of orche candidates against the sibling `orche/` checkout. Adoption moves local refs only.
 
 The root is a batch-install manifest, not an npm workspace. Each submodule keeps its own dependencies. Requires Node ≥22.19, git, and npm. Every package uses the Pi that loads it (Pi's `@earendil-works/*` packages and `typebox` are host-provided; the submodules' peer ranges are `*`). The eight TypeScript submodules' development dependencies and locks target **Pi 1.4.0**, including pi-commit's `bun.lock`. See [Pi 1.4.0 compatibility and validation](docs/pi-1.4.0.md) for the 1.4.0 changes that matter here, exact checks, exclusions and the 1.3.0 smoke baseline; [Pi 1.3.0](docs/pi-1.3.0.md) keeps the earlier record (including the conditional Kimi Coding override migration).
 
@@ -24,7 +25,7 @@ Local checkout:
 git clone --recurse-submodules https://github.com/zmfkzj/oh-my-pi-extensions.git
 cd oh-my-pi-extensions && npm install --legacy-peer-deps
 pi install /path/to/oh-my-pi-extensions
-# Or try all eleven without saving:
+# Or try all twelve without saving:
 pi -e /path/to/oh-my-pi-extensions
 ```
 
@@ -106,7 +107,7 @@ git pull && git submodule update --init --remote
 
 Alternatively, after `git pull`, rerun `npm install --legacy-peer-deps` to bootstrap the umbrella's recorded commits and missing dependencies. Bootstrap only syncs clean, detached submodules; branch checkouts or dirty worktrees are left untouched.
 
-The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-tmp, pi-commit, session-bus, pi-gui, pi-workbench, images, codegraph and cliproxyapi; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
+The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-tmp, pi-commit, session-bus, pi-gui, pi-workbench, images, codegraph, cliproxyapi and pi-eval-loop; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
 
 The CLIProxyAPI provider has its own update path: the `cliproxyapi/` submodule's repository (`zmfkzj/pi-cliproxyapi-bundle`) checks npm every 6 hours, updates its `package.json` and `package-lock.json` to a newer provider release, and commits that to `main` only after its typecheck and tests (including a Pi loader test) pass; the hourly workflow above then picks up the new gitlink. A separately installed provider (`npm:@router-for-me/pi-cliproxyapi-provider` in your settings) is updated by `pi update --extensions` instead. The CodeGraph CLI behind `codegraph/` is never updated by these packages: use `codegraph upgrade` (see [pi-codegraph](https://github.com/zmfkzj/pi-codegraph#versions-and-updates)).
 

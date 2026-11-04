@@ -74,7 +74,7 @@ for (const sub of packages) {
 await run("workbench", join(root, "pi-workbench"), ["test"]);
 await run("workbench-session", join(root, "pi-workbench"), ["run", "test:pi-session"]);
 await run("workbench-editor", join(root, "pi-workbench"), ["run", "test:pi-editor"]);
-// pi-eval-loop (in-umbrella subextension, no dependencies, no typecheck script: plain ESM checked by its own tests).
+// pi-eval-loop (submodule, no dependencies, no typecheck script: plain ESM checked by its own tests).
 await run("pi-eval-loop", join(root, "pi-eval-loop"), ["test"]);
 // Assert the runner itself has not accidentally omitted a required entrypoint/package suite.
 // 13 entrypoints: pi-tmp (whose suite runs in the root `npm test`) first, pi-eval-loop last; each must exist.

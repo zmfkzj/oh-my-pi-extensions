@@ -38,3 +38,7 @@
 	path = pi-tmp
 	url = https://github.com/zmfkzj/pi-tmp.git
 	branch = main
+[submodule "pi-eval-loop"]
+	path = pi-eval-loop
+	url = https://github.com/zmfkzj/pi-eval-loop.git
+	branch = main
