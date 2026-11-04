@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { agentBinds } from "../src/runner.mjs";
 import { BOX } from "../src/runner.mjs";
@@ -14,7 +14,13 @@ import { hostEnvironment, MOUNTS, runSandboxed } from "../src/sandbox.mjs";
 import { PACKAGE_DIR, UMBRELLA } from "../src/protocol.mjs";
 import { rmSync, tempDir } from "./helpers.mjs";
 
+// Under an isolated HOME (the umbrella's compat gate) the global Pi install is absent: its mount is then left out; every other
+// mount is the real one, so the isolation properties below are still probed. Credentials are looked up in the account's real
+// home (passwd), not $HOME.
 const env = hostEnvironment();
+const noPi = !existsSync(env.piModules);
+const present = (binds) => binds.filter(b => existsSync(b.from));
+const homedir = () => userInfo().homedir;
 const bwrapWorks = (() => { try { execFileSync(env.bwrap, ["--ro-bind", "/", "/", "--unshare-net", "--unshare-pid", "--tmpfs", "/home", "true"], { stdio: "ignore", timeout: 10_000 }); return true; } catch { return false; } })();
 const orcheReady = existsSync(join(env.orche, "src/extension/index.ts")) && existsSync(join(env.orche, "fixtures/suite"));
 
@@ -41,8 +47,8 @@ const tryConnect = (host, port) => new Promise(r => { const s = net.connect({ ho
 async function probe(binds, extraPaths, harnessInside) {
   const paths = [...SECRET_PATHS, ...extraPaths];
   const run = await runSandboxed({
-    binds, cwd: "/", command: [env.node, "-e", PROBE],
-    env: { PATH: `${env.nodeDir}/bin:/usr/bin:/bin`, HOME: `${BOX}/home`, EL_PROBE_PATHS: JSON.stringify(paths), EL_PROBE_HARNESS: harnessInside, EL_PROBE_UMBRELLA: UMBRELLA, EL_PROBE_LINK_ROOTS: JSON.stringify([env.piModules, join(env.nodeDir, "lib/node_modules"), `${harnessInside}/node_modules`]) },
+    binds: present(binds), cwd: "/", command: [env.node, "-e", PROBE],
+    env: { PATH: `${env.nodeDir}/bin:/usr/bin:/bin`, HOME: `${BOX}/home`, EL_PROBE_PATHS: JSON.stringify(paths), EL_PROBE_HARNESS: harnessInside, EL_PROBE_UMBRELLA: UMBRELLA, EL_PROBE_LINK_ROOTS: JSON.stringify([...(noPi ? [] : [env.piModules]), join(env.nodeDir, "lib/node_modules"), `${harnessInside}/node_modules`]) },
   }, { guardMs: 60_000 });
   const line = run.text.trim().split("\n").filter(l => l.startsWith("{")).at(-1);
   assert.ok(line, `probe produced no result: ${run.text.slice(-500)}`);
