@@ -1,14 +1,47 @@
 // Candidate generation. The optimizer is an agent OUTSIDE the compared harnesses: plain Pi (provider only) in the sandbox on its
-// own pinned route, with exactly two things mounted: the candidate's orche worktree (read-write) and a read-only evidence
-// directory holding train-split failure evidence and development aggregates. Holdout tasks, hidden tests, graders, the controller,
-// the state directory and every other candidate are outside its sandbox. It writes one minimal change plus out/hypothesis.json.
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
+// own pinned route. It sees exactly two things: a fresh COPY of the candidate's harness runtime (src, prompts, package.json,
+// tsconfig.json; read-write) and a read-only evidence directory (train-split failure evidence, development aggregates). orche's
+// tracked fixtures (train/dev hidden tests and references), its tests, experiments and .git, the holdout, graders, the controller,
+// the state directory and other candidates are outside its sandbox. After it stops, the TRUSTED host copies its regular-file
+// changes back into the candidate worktree (symlinks and special files are refused) where patch integrity checks them.
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { BRIDGE, BRIDGE_PORT, LAUNCH, MOUNTS, PLACEHOLDER_KEY, completedModelCalls, runSandboxed, startModelPath, wireEntries } from "./sandbox.mjs";
-import { ensureDir } from "./util.mjs";
+import { dirname, join } from "node:path";
+import { BRIDGE, BRIDGE_PORT, HARNESS_RUNTIME, LAUNCH, MOUNTS, PLACEHOLDER_KEY, completedModelCalls, runSandboxed, startModelPath, wireEntries } from "./sandbox.mjs";
+import { ensureDir, walkFiles } from "./util.mjs";
 import { FAILURE_CLASSES } from "./analysis.mjs";
 
+/** Copy the harness runtime parts of `worktree` into `dest` (regular files only). */
+export function harnessCopy(worktree, dest) {
+  ensureDir(dest);
+  for (const name of HARNESS_RUNTIME) if (existsSync(join(worktree, name))) cpSync(join(worktree, name), join(dest, name), { recursive: true, verbatimSymlinks: true });
+  return dest;
+}
+
+/** Trusted host side: apply the regular-file differences of `copy` to `worktree` (runtime parts only). Returns { written, deleted, refused }. */
+export function copyBack(copy, worktree) {
+  const written = [], deleted = [], refused = [];
+  const list = (root) => new Map(HARNESS_RUNTIME.flatMap(name => {
+    const p = join(root, name);
+    if (!existsSync(p) && !(() => { try { return lstatSync(p); } catch { return false; } })()) return [];
+    const st = lstatSync(p);
+    if (st.isFile()) return [[name, { path: name }]];
+    if (st.isSymbolicLink()) return [[name, { path: name, symlink: true }]];
+    return walkFiles(p).map(f => [`${name}/${f.path}`, { ...f, path: `${name}/${f.path}` }]);
+  }));
+  const before = list(worktree), after = list(copy);
+  for (const [path, f] of after) {
+    const st = f.symlink === undefined ? lstatSync(join(copy, path)) : null;
+    if (f.symlink !== undefined || !st?.isFile()) { refused.push(path); continue; }
+    const next = readFileSync(join(copy, path));
+    if (before.has(path) && existsSync(join(worktree, path)) && readFileSync(join(worktree, path)).equals(next)) continue;
+    mkdirSync(dirname(join(worktree, path)), { recursive: true });
+    writeFileSync(join(worktree, path), next);
+    written.push(path);
+  }
+  for (const path of before.keys()) if (!after.has(path)) { rmSync(join(worktree, path), { force: true }); deleted.push(path); }
+  return { written, deleted, refused };
+}
 export const WORK = "/tmp/work";
 
 /** The proposer's instruction (English; the evidence is attached as files). */
@@ -46,9 +79,10 @@ export async function proposeReal({ worktree, evidenceDir, protocol, env, parent
   const launch = join(control, "launch.sh"); writeFileSync(launch, LAUNCH, { mode: 0o555 });
   const model = await startModelPath({ dir: join(control, "model"), route, maxRequests: protocol.proposer.maxRequests, upstream: env.upstream, agentDir: env.agentDir, keyOverride: env.keyOverride });
   ensureDir(logDir);
+  const harnessDir = harnessCopy(worktree, join(control, "harness"));
   const binds = [
     { from: env.nodeDir }, { from: env.piModules }, { from: box, to: `${WORK}/box`, rw: true }, { from: out, to: `${WORK}/out`, rw: true },
-    { from: worktree, to: `${WORK}/harness`, rw: true }, { from: join(env.orche, "node_modules"), to: `${WORK}/harness/node_modules` },
+    { from: harnessDir, to: `${WORK}/harness`, rw: true }, { from: join(env.orche, "node_modules"), to: `${WORK}/harness/node_modules` },
     { from: evidenceDir, to: `${WORK}/evidence` },
     { from: env.provider, to: MOUNTS.provider }, { from: BRIDGE, to: MOUNTS.bridge }, { from: launch, to: MOUNTS.launch }, { from: model.socket, to: MOUNTS.socket, rw: true },
   ];
@@ -64,11 +98,13 @@ export async function proposeReal({ worktree, evidenceDir, protocol, env, parent
   const totals = model.totals();
   let hypothesis;
   try { hypothesis = JSON.parse(readFileSync(join(out, "hypothesis.json"), "utf8")); } catch { /* missing or invalid */ }
+  const applied = copyBack(harnessDir, worktree);
   rmSync(control, { recursive: true, force: true });
   const usage = { requests: totals.forwarded ?? 0, completed: completedModelCalls(wire), input: totals.input ?? 0, output: totals.output ?? 0, cached: totals.cached ?? 0, wallMs: run.ms, guardFired: run.guardFired, exit: run.code };
-  if (!hypothesis || typeof hypothesis.hypothesis !== "string") return { ok: false, detail: `no valid hypothesis.json (exit ${run.code}${run.guardFired ? ", wall-time guard" : ""})`, usage };
+  if (applied.refused.length) return { ok: false, detail: `refused non-regular files from the proposer: ${applied.refused.slice(0, 5).join(", ")}`, usage, applied };
+  if (!hypothesis || typeof hypothesis.hypothesis !== "string") return { ok: false, detail: `no valid hypothesis.json (exit ${run.code}${run.guardFired ? ", wall-time guard" : ""})`, usage, applied };
   hypothesis.targetFailureClass = targetClass;
-  return { ok: true, hypothesis, usage };
+  return { ok: true, hypothesis, usage, applied };
 }
 
 /**

@@ -117,14 +117,21 @@ export function exposureScan(ids, { orcheDir, extraTexts = [] }) {
 /** Seal of a dataset directory: sha256 of every file (committed before any search; verified before every holdout use). */
 export function sealOf(datasetDir) {
   const files = {};
-  for (const f of walkFiles(datasetDir)) if (f.symlink === undefined && !["SEAL.json", "USES.jsonl"].includes(f.path)) files[f.path] = sha256(readFileSync(join(datasetDir, f.path)));
-  return { files, digest: digestOf(files) };
+  const symlinks = [];
+  for (const f of walkFiles(datasetDir, { skip: [] })) {
+    if (["SEAL.json", "USES.jsonl"].includes(f.path)) continue;
+    if (f.symlink !== undefined) { symlinks.push(`${f.path} -> ${f.symlink}`); continue; }
+    files[f.path] = sha256(readFileSync(join(datasetDir, f.path)));
+  }
+  return { files, digest: digestOf(files), symlinks };
 }
 export function verifySeal(datasetDir) {
   const sealPath = join(datasetDir, "SEAL.json");
   if (!existsSync(sealPath)) return { ok: false, why: "no SEAL.json" };
   const seal = JSON.parse(readFileSync(sealPath, "utf8"));
   const now = sealOf(datasetDir);
+  // A sealed dataset holds regular files only: a symlink could redirect a grader to unsealed material.
+  if (now.symlinks.length) return { ok: false, why: `symlink(s) in the sealed dataset: ${now.symlinks.slice(0, 5).join(", ")}`, seal };
   if (now.digest !== seal.digest) {
     const changed = Object.keys({ ...seal.files, ...now.files }).filter(path => seal.files[path] !== now.files[path]);
     return { ok: false, why: `dataset changed since sealing: ${changed.slice(0, 5).join(", ")}`, seal };

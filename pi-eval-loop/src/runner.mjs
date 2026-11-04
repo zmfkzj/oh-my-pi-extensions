@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ensureDir, textMap, treeDigest, walkFiles, sha256, redact } from "./util.mjs";
-import { BRIDGE, BRIDGE_PORT, LAUNCH, MOUNTS, PLACEHOLDER_KEY, completedModelCalls, runSandboxed, startModelPath, wireEntries } from "./sandbox.mjs";
+import { BRIDGE, BRIDGE_PORT, LAUNCH, MOUNTS, PLACEHOLDER_KEY, completedModelCalls, harnessBinds, runSandboxed, startModelPath, wireEntries } from "./sandbox.mjs";
 import { gradeWorkspace } from "./grader.mjs";
 import { stageWorkspace } from "./datasets.mjs";
 import { makeRecord } from "./metrics.mjs";
@@ -66,6 +66,16 @@ export function terminalOf({ run, events, wire, totals, gateRefusals, stderr }) 
   return { status: "completed", detail: reason };
 }
 
+/** Every mount of a task agent's sandbox (exported so the isolation tests probe exactly this set). */
+export function agentBinds({ env, box, launch, socket, harness }) {
+  const binds = [
+    { from: env.nodeDir }, { from: env.piModules }, { from: box, to: BOX, rw: true },
+    { from: env.provider, to: MOUNTS.provider }, { from: BRIDGE, to: MOUNTS.bridge }, { from: launch, to: MOUNTS.launch }, { from: socket, to: MOUNTS.socket, rw: true },
+  ];
+  if (harness.kind === "orche") binds.push(...harnessBinds(harness.dir, MOUNTS.harness), { from: join(env.orche, "node_modules"), to: `${MOUNTS.harness}/node_modules` });
+  return binds;
+}
+
 /** One Pi invocation in the sandbox; returns observations and leaves the workspace in place. */
 async function piAttempt({ harness, task, route, unit, env, box, evidence, sessionId, signalPids, control }) {
   const ws = join(box, "ws"), agent = join(box, "agent"), sessions = join(box, "sessions"), home = join(box, "home"), tmp = join(box, "tmp");
@@ -84,16 +94,10 @@ async function piAttempt({ harness, task, route, unit, env, box, evidence, sessi
   writeFileSync(launch, LAUNCH, { mode: 0o555 });
   const model = await startModelPath({ dir: join(control, "model"), route, maxRequests: unit.maxRequests, upstream: env.upstream, agentDir: env.agentDir, keyOverride: env.keyOverride });
   const inside = (p) => p.replace(box, BOX);
-  const binds = [
-    { from: env.nodeDir }, { from: env.piModules }, { from: box, to: BOX, rw: true },
-    { from: env.provider, to: MOUNTS.provider }, { from: BRIDGE, to: MOUNTS.bridge }, { from: launch, to: MOUNTS.launch }, { from: model.socket, to: MOUNTS.socket, rw: true },
-  ];
+  const binds = agentBinds({ env, box, launch, socket: model.socket, harness });
   const piArgs = [env.piCli, "--mode", "json", "-p", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-mcp", "--no-approve", "--no-context-files", "--offline",
     "-e", `${MOUNTS.provider}/extensions/index.ts`];
-  if (harness.kind === "orche") {
-    binds.push({ from: harness.dir, to: MOUNTS.harness }, { from: join(env.orche, "node_modules"), to: `${MOUNTS.harness}/node_modules` });
-    piArgs.push("-e", `${MOUNTS.harness}/src/extension/index.ts`);
-  }
+  if (harness.kind === "orche") piArgs.push("-e", `${MOUNTS.harness}/src/extension/index.ts`);
   piArgs.push("--model", `${route.provider}/${route.model}`, "--thinking", route.effort, "--session-dir", inside(sessions), "--session-id", sessionId, "--", `${task.instruction}${TASK_SUFFIX}`);
   const sandboxEnv = {
     PATH: `${env.nodeDir}/bin:/usr/local/bin:/usr/bin:/bin`, HOME: inside(home), TMPDIR: inside(tmp), LANG: "C.UTF-8", LC_ALL: "C.UTF-8", TERM: "dumb", TZ: "UTC",

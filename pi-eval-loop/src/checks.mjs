@@ -32,19 +32,41 @@ export async function runChecks({ worktree, env, which = ["typecheck"], logDir, 
   return { pass: Object.values(results).every(r => r.pass), results };
 }
 
+/** Vitest summary counts ("Tests  9 failed | 3006 passed | 30 skipped (3045)"); undefined when absent. */
+export function vitestSummary(text) {
+  const clean = String(text).replace(/\x1b\[[0-9;]*m/g, "");
+  const line = [...clean.matchAll(/^\s*Tests\s+(.+\(\d+\))\s*$/gm)].at(-1)?.[1];
+  if (!line) return undefined;
+  const count = (word) => Number(new RegExp(`(\\d+) ${word}`).exec(line)?.[1] ?? 0);
+  return { failed: count("failed"), passed: count("passed"), skipped: count("skipped"), total: Number(/\((\d+)\)/.exec(line)[1]) };
+}
+
 /**
- * Relevant-check gate for adoption: the candidate's typecheck must pass and its test suite may not fail any test that passes for the
- * stable harness in the SAME sandboxed environment (tests that need local untracked results, ripgrep or git metadata fail for both
- * and are listed as environment failures, never silently ignored).
+ * Relevant-check gate for adoption, FAIL-CLOSED: the candidate's typecheck must pass; its test run must exist, finish within the
+ * guard and print a parsable summary; it must run at least as many tests and pass at least as many as the stable harness in the SAME
+ * sandboxed environment (an early exit or skipped tests cannot pass), and it may not fail any test that passes for stable. Tests that
+ * fail for both (they need untracked local results, ripgrep or git metadata) are reported as environment failures, never hidden.
  */
 export function compareChecks(stable, candidate) {
   const problems = [];
-  if (!candidate.results.typecheck?.pass) problems.push("candidate typecheck fails");
-  const stableFailing = new Set(stable.results.test?.failing ?? []);
-  const candFailing = candidate.results.test?.failing ?? [];
+  const cand = candidate?.results ?? {}, base = stable?.results ?? {};
+  if (!cand.typecheck?.pass) problems.push(cand.typecheck ? "candidate typecheck fails" : "candidate typecheck missing");
+  if (!cand.test) problems.push("candidate test run missing");
+  if (!base.test) problems.push("stable reference test run missing");
+  const cs = cand.test && vitestSummary(cand.test.tail ?? ""), ss = base.test && vitestSummary(base.test.tail ?? "");
+  if (cand.test && !cs) problems.push("candidate test run printed no parsable summary (early exit or forged output)");
+  if (base.test && !ss) problems.push("stable test run printed no parsable summary");
+  if (cand.test?.timeout) problems.push("candidate test run timed out");
+  if (cs && ss) {
+    if (cs.total < ss.total) problems.push(`candidate ran fewer tests (${cs.total} < ${ss.total})`);
+    if (cs.passed < ss.passed) problems.push(`candidate passed fewer tests (${cs.passed} < ${ss.passed})`);
+    if (cs.skipped > ss.skipped) problems.push(`candidate skipped more tests (${cs.skipped} > ${ss.skipped})`);
+  }
+  const stableFailing = new Set(base.test?.failing ?? []);
+  const candFailing = cand.test?.failing ?? [];
   const introduced = candFailing.filter(name => !stableFailing.has(name));
-  if (candidate.results.test && !candidate.results.test.pass && !candFailing.length) problems.push("candidate test run failed without a parsable failure list");
+  if (cand.test && !cand.test.pass && cs?.failed > 0 && !candFailing.length) problems.push("candidate test run failed without a parsable failure list");
+  if (cand.test && cand.test.exit !== 0 && cs && cs.failed === 0) problems.push(`candidate test run exited ${cand.test.exit} with no failed test (crash or forged summary)`);
   if (introduced.length) problems.push(`tests failing only with the candidate: ${introduced.slice(0, 5).join(" | ")}`);
-  if (candidate.results.test?.timeout) problems.push("candidate test run timed out");
-  return { pass: problems.length === 0, problems, introduced, environmentFailures: [...stableFailing] };
+  return { pass: problems.length === 0, problems, introduced, environmentFailures: [...stableFailing], summary: { candidate: cs ?? null, stable: ss ?? null } };
 }

@@ -30,7 +30,8 @@
       "./pi-workbench/index.js",
       "./codegraph/src/index.ts",
       "./cliproxyapi/src/index.ts",
-      "./extensions/dependencies/index.js"
+      "./extensions/dependencies/index.js",
+      "./pi-eval-loop/extension/index.js"
     ]
   }
 }

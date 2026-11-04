@@ -39,7 +39,7 @@ export class Loop {
     ensureDir(this.stateDir);
     this.events = new Ledger(join(this.stateDir, "events.jsonl"));
     this.archive = new Archive(this.stateDir);
-    this.deployer = new Deployer({ umbrella: this.umbrella, stateDir: this.stateDir, branch: this.protocol.deploy.branch, mode: this.protocol.deploy.mode });
+    this.deployer = new Deployer({ umbrella: this.umbrella, stateDir: this.stateDir, branch: this.protocol.deploy.branch, mode: this.protocol.deploy.mode, fault: opts.fault });
     this.stopping = false;
   }
   statePath() { return join(this.stateDir, "state.json"); }
@@ -349,15 +349,21 @@ export class Loop {
       this.save();
     }
     const independent = this.state.holdoutIndependentAtStart;
+    // Arms of this ONE holdout pass: stable, extra measured arms (A/B/C ablation finals) and the selected candidate.
+    const arms = [...new Set(["stable", ...(sel.extraArms ?? []), ...(sel.selected ? [sel.selected] : [])])];
     let cmp, incomplete = [], records = [];
     if (this.split.holdout.length) {
       const units = this.units("holdout", p.holdout.repeats);
-      await this.evaluator.evaluate(this.harness("stable"), units, "holdout:stable");
-      await this.evaluator.evaluate(this.harness(sel.selected), units, `holdout:${sel.selected}`);
+      for (const id of arms) await this.evaluator.evaluate(this.harness(id), units, `holdout:${id}`);
       records = this.records();
-      incomplete = missingUnits(records, [...units.map(u => this.evaluator.keyOf(this.harness("stable"), u.task, u.split, u.repeat)), ...units.map(u => this.evaluator.keyOf(this.harness(sel.selected), u.task, u.split, u.repeat))]);
-      const pairs = pairsOf(records, { a: "stable", b: sel.selected, split: "holdout", tasks: this.split.holdout, meta: this.tasksById });
-      cmp = adoptionCompare(pairs, p, `${p.seed}:holdout:${sel.selected}`);
+      incomplete = missingUnits(records, arms.flatMap(id => units.map(u => this.evaluator.keyOf(this.harness(id), u.task, u.split, u.repeat))));
+      if (sel.selected) cmp = adoptionCompare(pairsOf(records, { a: "stable", b: sel.selected, split: "holdout", tasks: this.split.holdout, meta: this.tasksById }), p, `${p.seed}:holdout:${sel.selected}`);
+    }
+    if (!sel.selected) {
+      const final = { candidate: null, verdict: "KEEP_STABLE", adopt: false, reasons: ["no candidate selected on development; holdout measured for the listed arms only"], arms, incomplete: incomplete.length, independence: independent };
+      this.event("adoption-decision", final);
+      this.setPhase("done", { final });
+      return;
     }
     const holdRecs = finalAttempts(records.filter(r => r.split === "holdout"));
     const critical = criticalProblems(records.filter(r => r.split === "holdout"), sel.selected, { reference: "stable" });
@@ -380,8 +386,10 @@ export class Loop {
   adopt() {
     const sel = this.state.selection, final = this.state.final;
     const result = this.deployer.adopt({ commit: sel.commit, candidateId: sel.selected, evaluation: { holdout: final.holdout, reportPath: join(this.stateDir, "report.md"), protocolDigest: this.protocolDigest }, configFiles: [join(this.stateDir, "protocol.lock.json")] });
-    this.archive.decide(sel.selected, "adopted", `adopted on local refs ${this.protocol.deploy.branch} (mode ${this.protocol.deploy.mode})`);
-    this.event("adopted", { id: sel.selected, previous: result.previous.digest, next: result.next.digest });
+    this.fault?.("loop:after-deploy");
+    if (this.archive.get(sel.selected).status !== "adopted") this.archive.decide(sel.selected, "adopted", `adopted on local refs ${this.protocol.deploy.branch} (mode ${this.protocol.deploy.mode})`);
+    this.fault?.("loop:after-archive");
+    if (!result.resumed || !this.events.records().some(e => e.type === "adopted" && e.id === sel.selected)) this.event("adopted", { id: sel.selected, previous: result.previous.digest, next: result.next.digest });
     this.setPhase("post-adopt", { adoption: { at: new Date().toISOString(), previous: result.previous, next: result.next } });
   }
 

@@ -20,10 +20,13 @@ export const DEFAULT_PROTOCOL = Object.freeze({
   proposer: { kind: "pi", route: { provider: "cliproxyapi", model: "gpt-6.1-sol", effort: "high" }, maxRequests: 120, wallMs: 30 * 60_000, allowedPaths: ["src/", "prompts/"], maxChangedFiles: 4, maxDiffLines: 200 },
   unit: { wallMs: 20 * 60_000, maxRequests: 150, graderMs: 120_000 },
   bootstrap: { draws: 10_000 },
+  // Holdout: only externally curated, unexposed, sealed tasks can back an adoption. The bundled holdout-v1 is implementer-authored
+  // (written by the agent that built this loop): it is measured once, but an adoption on it stays BLOCKED unless an operator adds
+  // its provenance to acceptedProvenance in a NEW protocol version (recorded in the lock and the report).
   // Screening on a train mini-batch (parent vs candidate, matched repeats). Support threshold .80 is an empirical default, not a guarantee.
   screening: { tasks: 6, minRepeats: 3, maxRepeats: 9, step: 3, support: 0.80, band: 0.10, level: "execution" },
   development: { repeats: 3, level: "task", support: 0.80 },
-  holdout: { repeats: 3, maxUses: 1, minTasks: 6, minFamilies: 4, requireIndependent: true, acceptedProvenance: ["external", "implementer-authored-sealed-before-search"] },
+  holdout: { repeats: 3, maxUses: 1, minTasks: 6, minFamilies: 4, requireIndependent: true, acceptedProvenance: ["external"] },
   gate: { eps: { overall: 0.03, hard: 0.05, consistency: 0.05 }, minGain: { overall: 0, hard: 0, consistency: 0 } },
   adoption: { support: 0.95, level: "task", eps: { hard: 0.02, consistency: 0.02 }, minGain: { overall: 0 }, familyRegression: 0.15, familyRegressionSupport: 0.80, requireHardStratum: true, requireChecks: true },
   baselines: { pure: true, stable: true, targetMode: true, multiAttempt: { k: 3 } },

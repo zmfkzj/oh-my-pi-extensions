@@ -83,15 +83,18 @@ export function testProtocol(overrides = {}) {
 
 export const edit = (text) => (dir) => writeFileSync(join(dir, "src/skill.txt"), `${text}\n`);
 
-export function makeLoop({ root, protocol = testProtocol(), entries, skill = skillOf, strategy = "pareto", prerequisites, checks, backend, stateName = "state", fixtures }) {
+export function makeLoop({ root, protocol = testProtocol(), entries, skill = skillOf, strategy = "pareto", prerequisites, checks, backend, stateName = "state", fixtures, fault }) {
   const fx = fixtures ?? (() => { const u = makeUmbrella(root); const tasks = makeTasks(root, TRAIN_DEV); const holdout = makeHoldout(root, HOLDOUT); return { ...u, tasks, holdout }; })();
   const loop = new Loop({
     stateDir: join(root, stateName), protocol, strategy, umbrella: fx.umbrella, orche: fx.orche, envDigest: "test-env", log: () => {},
     backend: backend ?? simulatedBackend({ skill: (h, t) => skill(h, t), seed: "test" }),
     proposer: scriptedProposer(entries ?? []), prerequisites: prerequisites ?? (async () => [{ name: "sim", ok: true }]),
-    checks: checks ?? (async () => ({ pass: true, results: { typecheck: { pass: true } } })),
-    datasets: { tasks: fx.tasks, holdoutDir: fx.holdout.dir, holdoutTasks: fx.holdout.tasks },
+    checks: checks ?? (async () => passingChecks()),
+    datasets: { tasks: fx.tasks, holdoutDir: fx.holdout.dir, holdoutTasks: fx.holdout.tasks }, fault,
   });
   return { loop, fx };
 }
 export { rmSync };
+
+/** A check result as runChecks reports it for a clean orche suite (typecheck plus a vitest summary). */
+export const passingChecks = (summary = "      Tests  10 passed (10)") => ({ pass: true, results: { typecheck: { pass: true, exit: 0 }, test: { pass: true, exit: 0, failing: [], tail: `\n${summary}\n` } } });

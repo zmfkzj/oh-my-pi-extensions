@@ -53,6 +53,8 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi", "cliproxyapi-refresh", "continue", "fast", "pause"]);
   // The umbrella's dependency commands: the batch /oh-my-pi and the physical-desktop package's /computer-use.
   assert.deepEqual(byExtension["extensions/dependencies/index.js"], ["computer-use", "oh-my-pi"]);
+  // pi-eval-loop: read-only inspection of the headless optimization loop.
+  assert.deepEqual(byExtension["pi-eval-loop/extension/index.js"], ["eval-loop"]);
 
   // Names: no built-in conflict, no renamed duplicate, every one in the `/` menu exactly once next to the built-ins.
   for (const command of h.registered) {
@@ -71,9 +73,10 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/codeg", "codegraph"), "/codegraph ");
   assert.equal(await h.complete("/cliproxyapi-r", "cliproxyapi-refresh"), "/cliproxyapi-refresh ");
   assert.equal(await h.complete("/oh-", "oh-my-pi"), "/oh-my-pi ");
+  assert.equal(await h.complete("/eval-l", "eval-loop"), "/eval-loop ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
-  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use", "oh-my-pi"]) {
+  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use", "oh-my-pi", "eval-loop"]) {
     assert.equal(typeof h.registered.find(command => command.name === name)?.getArgumentCompletions, "function", `/${name} completes arguments`);
   }
   assert.equal(await h.complete("/browser engine c", "engine chrome"), "/browser engine chrome");
@@ -97,6 +100,8 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
     assert.equal(await h.complete(`/${command} install-d`, "install-deps"), `/${command} install-deps`, `/${command} install-deps`);
   }
   assert.equal(await h.complete("/oh-my-pi d", "doctor"), "/oh-my-pi doctor");
+  assert.equal(await h.complete("/eval-loop st", "status"), "/eval-loop status");
+  assert.equal(await h.complete("/eval-loop d", "doctor"), "/eval-loop doctor");
   assert.equal(await h.complete("/oh-my-pi install-deps br", "install-deps browser"), "/oh-my-pi install-deps browser");
 
   // Free text, unknown words and finished arguments get no suggestions, so Enter submits them.

@@ -95,13 +95,14 @@ export function compare(tasks, { draws = 10_000, seed, level = "task", event = "
     const pb = tasks.map(t => weightedRate(rng, t.b));
     const qa = objectives(tasks, v, pa), qb = objectives(tasks, v, pb);
     const delta = {};
-    for (const o of available) { delta[o] = qb[o] - qa[o]; deltas[o][j] = delta[o]; }
+    // Differences below floating-point resolution are exactly zero (identical outcomes must never count as an improvement).
+    for (const o of available) { const d = qb[o] - qa[o]; delta[o] = Math.abs(d) < 1e-12 ? 0 : d; deltas[o][j] = delta[o]; }
     if (test(delta, { eps, minGain }, available)) hits++;
     if (delta.overall < -lossThreshold) losses++;
     for (const f of families) {
       let num = 0, den = 0;
       tasks.forEach((t, i) => { if ((t.family ?? t.task) === f) { num += v[i] * (pb[i] - pa[i]); den += v[i]; } });
-      familyDelta[f][j] = den > 0 ? num / den : 0;
+      familyDelta[f][j] = den > 0 && Math.abs(num / den) >= 1e-12 ? num / den : 0;
     }
   }
   const support = hits / draws;

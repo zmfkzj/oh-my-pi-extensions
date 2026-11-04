@@ -38,9 +38,10 @@ function tempDir(t, prefix) {
 const provider = (id, check, install = check) => ({ id, label: `pkg-${id}`, command: `/${id}`, check: check ?? install, install });
 const report = (...items) => ({ items });
 
-test("the package table is the root manifest's extensions, the dependencies and pi-tmp entries aside", () => {
+test("the package table is the root manifest's extensions, the dependencies, pi-tmp and pi-eval-loop entries aside", () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
-  const aside = ["./extensions/dependencies/index.js", "./pi-tmp/index.js"];
+  // pi-eval-loop has no npm dependencies; its host prerequisites (bwrap, Pi, provider, credentials) are `/eval-loop doctor`.
+  const aside = ["./extensions/dependencies/index.js", "./pi-tmp/index.js", "./pi-eval-loop/extension/index.js"];
   assert.deepEqual(PACKAGES.map(pkg => pkg.entry), manifest.pi.extensions.filter(path => !aside.includes(path)));
   for (const entry of aside) assert.ok(manifest.pi.extensions.includes(entry), entry);
   assert.equal(new Set(PACKAGES.map(pkg => pkg.id)).size, 10);

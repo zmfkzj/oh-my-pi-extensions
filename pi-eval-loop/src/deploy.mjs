@@ -3,7 +3,7 @@
 // `eval-loop/stable` in orche to the adopted commit and writes a matching umbrella commit (same tree, orche gitlink replaced) on
 // the umbrella's `eval-loop/stable` branch with git plumbing - no checkout, no working-tree change, no push, no production branch.
 // Rollback restores both refs to a recorded snapshot and verifies the result.
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "./worktree.mjs";
@@ -43,34 +43,69 @@ export function umbrellaCommit(umbrella, parent, path, commit, message) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+const ZERO = "0".repeat(40);
+
 export class Deployer {
-  constructor({ umbrella, stateDir, branch = "eval-loop/stable", orchePath = "orche", mode = "refs" }) {
-    Object.assign(this, { umbrella, branch, orchePath, mode });
+  /** fault(name): test hook called at every crash point of adoption/rollback (throwing there simulates a crash). */
+  constructor({ umbrella, stateDir, branch = "eval-loop/stable", orchePath = "orche", mode = "refs", fault }) {
+    Object.assign(this, { umbrella, branch, orchePath, mode, fault });
     this.history = new Ledger(join(stateDir, "stable-history.jsonl"));
+    this.snapshots = join(stateDir, "snapshots");
   }
   get orche() { return join(this.umbrella, this.orchePath); }
   current(configFiles) { return snapshot({ umbrella: this.umbrella, orchePath: this.orchePath, branch: this.branch, configFiles }); }
+  /** Keep the bytes of the loop-owned configuration files of a snapshot so a rollback can restore them. */
+  keepConfigs(snap) {
+    for (const [file, digest] of Object.entries(snap.configs ?? {})) if (digest && existsSync(file)) { mkdirSync(this.snapshots, { recursive: true }); copyFileSync(file, join(this.snapshots, digest)); }
+    return snap;
+  }
+  /** Move refs/heads/<branch> of `repo` to `want`, but only from `old` (compare-and-swap); a no-op when already there. */
+  moveRef(repo, want, old) {
+    const cur = refOf(repo, `refs/heads/${this.branch}`);
+    if (cur === want) return false;
+    if ((cur ?? null) !== (old ?? null)) throw new Error(`${repo}: ${this.branch} is ${cur ?? "absent"}, expected ${old ?? "absent"} (concurrent change; refusing to overwrite)`);
+    git(repo, ["update-ref", `refs/heads/${this.branch}`, want, old ?? ZERO]);
+    return true;
+  }
 
-  /** Adopt `commit` (an orche commit that exists locally). Returns { previous, next }. */
+  /**
+   * Adopt `commit` (an orche commit that exists locally), exactly once and crash-safe: the intent (previous snapshot and the
+   * planned umbrella commit) is journaled BEFORE any ref moves; a resumed adoption reuses that intent (it never re-snapshots a
+   * half-changed state as the rollback target) and moves each ref only from its recorded old value.
+   */
   adopt({ commit, candidateId, evaluation, configFiles = [] }) {
-    const previous = this.current(configFiles);
-    this.history.append({ type: "pre-adopt", candidateId, snapshot: previous });
-    if (this.mode === "dry") { this.history.append({ type: "adopt-dry", candidateId, commit }); return { previous, next: previous, dry: true }; }
-    if (!refOf(this.orche, commit)) throw new Error(`orche commit ${commit} not found locally`);
-    const parent = previous.umbrella.base;
-    const umbrellaNext = umbrellaCommit(this.umbrella, parent, this.orchePath, commit, `eval-loop: adopt ${candidateId} (orche ${commit.slice(0, 12)})\n\nAdopted by pi-eval-loop after the holdout adoption gate. Evaluation: ${evaluation?.reportPath ?? "see state"}.`);
-    git(this.orche, ["update-ref", `refs/heads/${this.branch}`, commit, ...(previous.orche.stableRef ? [previous.orche.stableRef] : [])]);
-    git(this.umbrella, ["update-ref", `refs/heads/${this.branch}`, umbrellaNext, ...(previous.umbrella.stable ? [previous.umbrella.stable] : [])]);
+    const adoptionId = digestOf({ commit, candidateId, protocol: evaluation?.protocolDigest ?? null, branch: this.branch });
+    const recs = this.history.records();
+    const done = recs.find(r => r.type === "adopted" && r.adoptionId === adoptionId);
+    let intent = recs.find(r => r.type === "pre-adopt" && r.adoptionId === adoptionId);
+    if (done && intent) return { previous: intent.snapshot, next: done.snapshot, resumed: true };
+    if (!intent) {
+      const previous = this.keepConfigs(this.current(configFiles));
+      if (this.mode !== "dry" && !refOf(this.orche, commit)) throw new Error(`orche commit ${commit} not found locally`);
+      const umbrellaNext = this.mode === "dry" ? null : umbrellaCommit(this.umbrella, previous.umbrella.base, this.orchePath, commit, `eval-loop: adopt ${candidateId} (orche ${commit.slice(0, 12)})\n\nAdopted by pi-eval-loop after the holdout adoption gate. Evaluation: ${evaluation?.reportPath ?? "see state"}.`);
+      intent = this.history.append({ type: "pre-adopt", adoptionId, candidateId, commit, umbrellaCommit: umbrellaNext, snapshot: previous });
+    }
+    this.fault?.("adopt:after-intent");
+    const previous = intent.snapshot;
+    if (this.mode === "dry") { const rec = this.history.append({ type: "adopted", adoptionId, candidateId, commit, dry: true, snapshot: previous }); return { previous, next: rec.snapshot, dry: true }; }
+    this.moveRef(this.orche, commit, previous.orche.stableRef);
+    this.fault?.("adopt:after-orche-ref");
+    this.moveRef(this.umbrella, intent.umbrellaCommit, previous.umbrella.stable);
+    this.fault?.("adopt:after-umbrella-ref");
     const next = this.current(configFiles);
     next.evaluation = evaluation;
-    this.history.append({ type: "adopted", candidateId, commit, umbrellaCommit: umbrellaNext, snapshot: next });
+    this.history.append({ type: "adopted", adoptionId, candidateId, commit, umbrellaCommit: intent.umbrellaCommit, snapshot: next });
     return { previous, next };
   }
 
   /** The snapshot before the latest adoption (the rollback target), or undefined. */
   previousStable() { return this.history.records().filter(r => r.type === "pre-adopt").at(-1)?.snapshot; }
 
-  /** Restore the refs of `target` (default: the snapshot before the latest adoption); verify; record. */
+  /**
+   * Restore `target` (default: the snapshot before the latest adoption): both stable refs, and every loop-owned configuration file
+   * whose bytes were kept; then verify refs, effective orche commit, every submodule gitlink and the configuration digests.
+   * Idempotent: a crash during rollback is repaired by running it again.
+   */
   rollback({ reason, target } = {}) {
     target ??= this.previousStable();
     if (!target) throw new Error("no recorded stable snapshot to roll back to");
@@ -78,7 +113,13 @@ export class Deployer {
     const restore = (repo, ref, value) => { if (value) git(repo, ["update-ref", `refs/heads/${ref}`, value]); else if (refOf(repo, `refs/heads/${ref}`)) git(repo, ["update-ref", "-d", `refs/heads/${ref}`]); };
     if (this.mode !== "dry") {
       restore(this.orche, this.branch, target.orche.stableRef);
+      this.fault?.("rollback:after-orche-ref");
       restore(this.umbrella, this.branch, target.umbrella.stable);
+      for (const [file, digest] of Object.entries(target.configs ?? {})) {
+        const kept = digest && join(this.snapshots, digest);
+        const now = existsSync(file) ? sha256(readFileSync(file)) : null;
+        if (now !== digest && kept && existsSync(kept)) copyFileSync(kept, file);
+      }
     }
     const after = this.current(Object.keys(target.configs ?? {}));
     const problems = [];
@@ -86,8 +127,10 @@ export class Deployer {
       if ((after.umbrella.stable ?? null) !== (target.umbrella.stable ?? null)) problems.push("umbrella stable ref not restored");
       if ((after.orche.stableRef ?? null) !== (target.orche.stableRef ?? null)) problems.push("orche stable ref not restored");
       if (after.orche.effective !== target.orche.effective) problems.push("effective stable orche commit differs");
-      for (const [file, digest] of Object.entries(target.configs ?? {})) if ((after.configs?.[file] ?? null) !== digest) problems.push(`configuration ${file} differs from the stable snapshot (not modified by eval-loop; restore it manually)`);
-      for (const [path, sha] of Object.entries(target.umbrella.gitlinks)) if (gitlinks(this.umbrella, after.umbrella.base)[path] !== sha) problems.push(`gitlink ${path} differs after rollback`);
+      for (const [file, digest] of Object.entries(target.configs ?? {})) if ((after.configs?.[file] ?? null) !== digest) problems.push(`configuration ${file} differs from the stable snapshot and no kept copy could restore it`);
+      const linksAfter = gitlinks(this.umbrella, after.umbrella.base);
+      for (const [path, sha] of Object.entries(target.umbrella.gitlinks)) if (linksAfter[path] !== sha) problems.push(`gitlink ${path} differs after rollback`);
+      for (const path of Object.keys(linksAfter)) if (!(path in target.umbrella.gitlinks)) problems.push(`gitlink ${path} added after rollback`);
     }
     this.history.append({ type: "rolled-back", reason, from: before, to: target, problems });
     return { before, after, problems };

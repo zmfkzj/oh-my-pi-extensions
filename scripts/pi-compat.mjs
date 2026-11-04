@@ -74,10 +74,12 @@ for (const sub of packages) {
 await run("workbench", join(root, "pi-workbench"), ["test"]);
 await run("workbench-session", join(root, "pi-workbench"), ["run", "test:pi-session"]);
 await run("workbench-editor", join(root, "pi-workbench"), ["run", "test:pi-editor"]);
+// pi-eval-loop (in-umbrella subextension, no dependencies, no typecheck script: plain ESM checked by its own tests).
+await run("pi-eval-loop", join(root, "pi-eval-loop"), ["test"]);
 // Assert the runner itself has not accidentally omitted a required entrypoint/package suite.
-// 12 entrypoints since pi-tmp (whose suite runs in the root `npm test`) became the first one; each must exist.
+// 13 entrypoints: pi-tmp (whose suite runs in the root `npm test`) first, pi-eval-loop last; each must exist.
 const extensions = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).pi.extensions;
-assert.equal(extensions.length, 12);
+assert.equal(extensions.length, 13);
 for (const entry of extensions) assert.ok(existsSync(join(root, entry)), `manifest extension missing: ${entry}`);
-assert.equal(results.length, 20);
+assert.equal(results.length, 21);
 console.log(`\nPi 1.4.0 gate: ${results.filter(result => result.status === 0).length}/${results.length} commands passed. Evidence: ${logs}/results.json`);

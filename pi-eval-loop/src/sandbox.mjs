@@ -22,6 +22,14 @@ export const MOUNTS = { socket: "/run/eval-loop/model.sock", bridge: "/opt/eval-
 export const PLACEHOLDER_KEY = "pi-eval-loop-placeholder-key";
 export const ALLOWED = [{ method: "GET", path: /^\/v1\/models(\?|$)/ }, { method: "POST", path: /^\/backend-api\/codex\/responses(\?|$)/ }, { method: "POST", path: /^\/backend-api\/responses(\?|$)/ }];
 
+/**
+ * The ONLY parts of an orche harness checkout that a sandboxed agent (task agent or proposer) ever sees: the extension runtime.
+ * orche's tracked fixtures (train/dev hidden tests and reference solutions), experiments, tests, docs and its .git pointer stay
+ * outside every model-facing sandbox.
+ */
+export const HARNESS_RUNTIME = ["src", "prompts", "package.json", "tsconfig.json"];
+export const harnessBinds = (dir, to, { rw = false } = {}) => HARNESS_RUNTIME.filter(name => existsSync(join(dir, name))).map(name => ({ from: join(dir, name), to: `${to}/${name}`, rw }));
+
 /** Resolved host environment (all overridable by EVAL_LOOP_* variables). */
 export function hostEnvironment() {
   const piCli = process.env.EVAL_LOOP_PI_CLI ?? join(homedir(), ".bun/install/global/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
