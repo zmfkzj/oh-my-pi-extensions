@@ -1,0 +1,54 @@
+# Pi 1.5.0 compatibility and validation
+
+Target: **`@earendil-works/pi-coding-agent@1.5.0`** (released 2026-11-02) with the matching `pi-ai`, `pi-agent-core`, `pi-tui`, `pi-mcp`, `pi-codemode`, `pi-telemetry` and the new `pi-schema` 1.5.0 packages. Sources: [release](https://github.com/earendil-works/pi/releases/tag/v1.5.0), [npm metadata](https://registry.npmjs.org/@earendil-works/pi-coding-agent/1.5.0), the installed package's `CHANGELOG.md`, [extensions](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/docs/extensions.md) (Available Imports, Tool parameter schemas and TypeBox, Keybinding Hints) and [packages](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/docs/packages.md) (Show a changelog). The public declarations (`index.d.ts`, `core/extensions/types.d.ts`, pi-ai, pi-agent-core, pi-tui) and the faux provider were compared with 1.4.0. The earlier record is [Pi 1.4.0](pi-1.4.0.md).
+
+## What changed in Pi and what it means here
+
+| Pi 1.5.0 change (upstream) | Effect on this repository |
+|---|---|
+| The published `@earendil-works/pi-ai` no longer re-exports TypeBox (`Type`, `Static`, `TSchema`) and no longer depends on `typebox`. Inside Pi the import is still mapped to pi-ai's compat entry plus Pi's TypeBox; the docs say to import TypeBox from `typebox` in new code. | Two files imported `Type` from pi-ai. Pi itself would still load them, but `tsc` and suites that import the source directly fail on 1.5.0. `images/src/tool.ts` (the `generate_image` schema) and `cliproxyapi/test/pi-stream.test.ts` now import `Type` from `typebox`. images declares `typebox` as a host-provided peer (`*`) and a 1.3.27 development dependency, like orche and session-bus; CLIProxyAPI has it as a development dependency only (test use). `typebox` stays installed through pi-coding-agent 1.5.0 either way. |
+| Tool arguments are validated by `@earendil-works/pi-schema` instead of TypeBox. Messages read `- offset: expected number, got string` / `- workers: expected at most 2 items`; numeric strings are coerced, single values wrapped into arrays; `Type.Refine`, `BigInt`, `Undefined`, codecs and `Format.Set` formats no longer apply. | No package uses the non-JSON-Schema TypeBox features in tool parameters. Two orche tests asserted TypeBox wording and now assert pi-schema's (`test/tools/prepare-arguments.test.ts`, `test/extension/orchestrator.test.ts`); both still check the refusal itself. orche's own `typebox/value` checks (task plan, split, mdsd/ultra reports) do not go through Pi and are unchanged. orche's integer coercion for `read`/`find`/`ast_search`/`bash` stays; it is now redundant with Pi's coercion for numeric strings but harmless. |
+| `ToolRenderContext`, `MessageRenderOptions` and `EntryRenderOptions` now carry `keyText()`/`keyHint()`. Importing `keyText` from `@earendil-works/pi-coding-agent` can resolve the extension's own copy, which does not see the user's key bindings. | orche's expand hint (`orche/src/extension/render.ts`) uses the injected `keyText` from the tool render context and from the `orche-task-result` message render options, and falls back to the imported one (older hosts inject none; peer range `*`). New tests in `orche/test/extension/render.test.ts`. pi-commit's renderer test builds `MessageRenderOptions` by hand and now passes the two functions (`test/extension/render.test.ts`); pi-commit's renderer itself shows no key hints. |
+| The faux provider no longer counts a first request's prompt twice (as `input` and as `cacheWrite`): every prompt token is now either a cache read or a cache write, `input` is 0 with a session id. | This exposed an orche bug: a worker's latest context size was `input + cacheRead`, leaving out cache writes, which providers such as Anthropic report outside `input`. A worker whose context grew by cache writes was not retired at 70%. `orche/src/extension/workers.ts` now counts `input + cacheRead + cacheWrite`, like orche's length recovery already did; the 70% retirement tests pass again unchanged and the single-workflow test that checks a request above 70% uses the same sum. The compaction test in `orche/test/extension/single-workflow.test.ts` relied on the double count for `tokensBefore > tokensAfter` while its only turn was kept; it now adds a small recent turn so compaction really summarizes the large earlier one. |
+| `pi.setActiveTools()` keeps the order of tools that stay active and appends new ones; `pi.exec()` gains `maxBuffer`/`truncated`, a 256 MiB default cap and SIGKILL after an ignored SIGTERM; saved "Do not trust" decisions now win over auto-trust (`ctx.isProjectTrusted()`). | No code depended on the old order or exec behaviour; root tool-surface/restore tests pass. browser and orche read project config only when `ctx.isProjectTrusted()` is true, so a saved "Do not trust" decision now also keeps their project config unloaded, as intended. |
+| Extension packages can show a changelog after an update (`CHANGELOG.md` or `pi.changelogPath`, matched against the `package.json` version). | The umbrella and the submodules with a `CHANGELOG.md` only have `## [Unreleased]` and do not change their `version`, so Pi shows nothing; no setting added. |
+| pi-ai's private `openai-codex-responses` implementation changed again (it no longer deletes streaming scratch fields itself). | The CLIProxyAPI provider (1.4.25) patches that file at runtime; its real SSE/tool streaming and patched-module cache tests pass on 1.5.0 without changes. |
+| Other changes: new model catalog and defaults, MCP OAuth client registration, `pi update` self-update command, TUI/Markdown rendering fixes, `ctx.ui.custom({ blocked })`, `Usage.cost.totalFromProvider`, `responseModel`, `pi -e npm:` refresh, Windows/WSL fixes. | Not used by these packages or not affecting them. |
+
+## Changes
+
+- The eight TypeScript packages pin their Pi **development** dependencies and locks to 1.5.0 (`pi-commit`: `bun.lock`). The locks add `@earendil-works/pi-schema` and the transitive `@isaacs/nonrecursive-glob-match`, and move `minimatch` 11.0.3 and `undici` 8.12.3 with pi-coding-agent. In `codegraph` (development dependencies only) npm also re-resolved some transitive AWS SDK/Smithy packages of pi-ai within their ranges. Host-provided `*` peers and runtime dependencies are unchanged, apart from images' new `typebox` peer (above). CLIProxyAPI's lock keeps npm's `--legacy-peer-deps` flags.
+- Gates: `scripts/pi-harness.mjs`, `scripts/pi-versions.mjs`, `scripts/pi-compat.mjs`, `scripts/verify-install.mjs` and `pi-workbench/tests/pi-host.mjs` default to 1.5.0.
+- Code: `images/src/tool.ts`, `orche/src/extension/render.ts`, `orche/src/extension/workers.ts` as described above, with their tests.
+- Docs: root README, `browser/README.md`, `cliproxyapi/README.md` (also naming the actually locked provider 1.4.25).
+
+## Reproduce the checks
+
+Same as [1.4.0](pi-1.4.0.md#reproduce-the-checks) with a 1.5.0 package directory:
+
+```sh
+export OMP_PI_DIR=/path/to/node_modules/@earendil-works/pi-coding-agent   # 1.5.0, with pi-ai/pi-tui 1.5.0 beside it
+export OMP_PI_VERSION=1.5.0
+export OMP_COMPAT_LOG_DIR=/path/to/scratch/pi150-results
+npm run test:compat      # 21 commands
+OMP_INSTALL_NPM_CACHE=/path/to/populated/npm-cache OMP_INSTALL_TEST_DIR=/path/to/scratch npm run test:install
+```
+
+`test:install` runs offline. Besides the production tarballs of the current locks (`npm ci --omit=dev --legacy-peer-deps --ignore-scripts --cache <cache>` on scratch copies of each `package.json` + `package-lock.json`), the cache must hold the registry metadata of pi-commit's development dependencies, because bootstrap runs `npm install` in pi-commit, which has no npm lock: `npm install --omit=dev --legacy-peer-deps --ignore-scripts --cache <cache>` on a scratch copy of `pi-commit/package.json` fills it.
+
+Scratch path length matters for tests that are not about Pi: pi-gui's `test/portal-activation.test.ts` (added after the 1.4.0 record) binds a private D-Bus socket at `<TMPDIR>/pi-gui-pa-XXXXXX/bus`; with a `TMPDIR` longer than about 85 characters, `dbus-daemon` refuses it ("Socket name too long") and the three activation cases time out. The 1.4.0 notes on `images/test/paste.test.ts` and orche's `cb-ab-sol.test.ts` still apply.
+
+### Recorded results (2026-11-08)
+
+Linux x64, Node 24.21.0, npm 11.19.0, Bun 1.4.2; host = the isolated candidate install `~/.bun/install/global/node_modules/@earendil-works/pi-coding-agent` 1.5.0 (`pi-ai`/`pi-tui` 1.5.0 beside it). Isolated HOME/agent data, no credentials, no paid or live model request. Every check printed `Pi under test: …/pi-coding-agent (pi-coding-agent 1.5.0); pi-ai 1.5.0 …; pi-tui 1.5.0 …`, and the preflight resolved every package-local SDK at 1.5.0.
+
+| Check | Result |
+|---|---|
+| Before the migration | `npm test` passed; `npm run test:compat` stopped at its first line (`test:compat is the mandatory 1.4.0 gate`, `'1.5.0' !== '1.4.0'`), and its version preflight would then have refused the 1.4.0 package pins. |
+| `npm test` (root) | 74/74. |
+| `npm run test:compat`, first run (scratch `TMPDIR` of about 110 characters) | 19/21. orche 3054/3066 passed with 6 failures, all from Pi 1.5.0: pi-schema messages (2) and the faux cache-write accounting (4); fixed as described above. pi-gui: the three `portal-activation` cases (socket path length). |
+| `npm run test:compat`, final run | 19/21 commands passed. Root 74/74; browser 537 (4 skipped: no real obscura/Chrome E2E); pi-commit 193; session-bus 328; images 141 (1 live test skipped); codegraph 39; cliproxyapi 51; Workbench 75 including its Python vendor suites, plus both real-host session/editor checks; pi-eval-loop 205; all eight typechecks. Failed: pi-gui 103/107 (1 skipped), only the three `portal-activation` cases (socket path length above); orche 3056/3066 (8 skipped), only `test/experiments/cb-ab.test.ts` (toy case) and `test/experiments/ultra-ho-chain.test.ts`, because the local SWE virtualenvs under `orche/results/advisor-reviewer/cache/swe/*/venv` were removed by another process on this host between the two runs (13:19 local time); both cases passed in the first run on the same Pi. The 6 orche cases fixed after the first run pass (`vitest run` of the five affected files: 152/152). |
+| Those cases separately | `pi-gui/test/portal-activation.test.ts` 5/5 with a short `TMPDIR` alias of the same scratch directory. |
+| `npm run test:install` | Passed: current-tree artifact, `npm ci --omit=dev --legacy-peer-deps --offline` with bootstrap, no bundled development SDK, 7 real-host test files, then clean reinstall and the same checks. |
+
+Not verified: real model behaviour, live OAuth/cloud authentication, CLIProxyAPI WebSocket transport, a real desktop or browser engine, the user's custom key bindings in a real terminal, an older-host smoke run, and a remote `pi update` of the umbrella (submodule changes are uncommitted, so no gitlink can point at them yet).
