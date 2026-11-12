@@ -24,7 +24,7 @@ export const PACKAGES = Object.freeze([
   { id: "images", label: "pi-gateway-images", command: "/images", entry: "./images/src/index.ts", dir: "images" },
   { id: "pi-workbench", label: "pi-workbench", command: "/workbench", entry: "./pi-workbench/index.js", dir: "pi-workbench" },
   { id: "codegraph", label: "pi-codegraph", command: "/codegraph", entry: "./codegraph/src/index.ts", dir: "codegraph" },
-  { id: "cliproxyapi", label: "pi-cliproxyapi-bundle", command: "/cliproxyapi", entry: "./cliproxyapi/src/index.ts", dir: "cliproxyapi" },
+  { id: "cliproxyapi", label: "pi-cliproxyapi-bundle", command: "/cliproxyapi-bundle", entry: "./cliproxyapi/src/index.ts", dir: "cliproxyapi" },
 ]);
 export const UMBRELLA_COMMAND = "oh-my-pi";
 export const UMBRELLA_USAGE = `Usage: /${UMBRELLA_COMMAND} doctor [package...] | install-deps [package...]  (packages: ${PACKAGES.map(pkg => pkg.id).join(", ")}; default: all)`;

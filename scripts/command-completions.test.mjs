@@ -49,8 +49,8 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.deepEqual(byExtension["images/src/index.ts"], ["images"], "images: its dependency doctor/install-deps command");
   assert.deepEqual(byExtension["pi-workbench/index.js"], ["workbench"]);
   assert.deepEqual(byExtension["codegraph/src/index.ts"], ["codegraph"]);
-  // The official CLIProxyAPI provider, loaded through the bundle (no separate install in this agent dir).
-  assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi", "cliproxyapi-refresh", "continue", "fast", "pause"]);
+  // pi-cliproxyapi-provider's /cliproxyapi, loaded through the bundle (no separate install in this agent dir), and the bundle's own /cliproxyapi-bundle.
+  assert.deepEqual(byExtension["cliproxyapi/src/index.ts"], ["cliproxyapi", "cliproxyapi-bundle"]);
   // The umbrella's dependency commands: the batch /oh-my-pi and the physical-desktop package's /computer-use.
   assert.deepEqual(byExtension["extensions/dependencies/index.js"], ["computer-use", "oh-my-pi"]);
   // pi-eval-loop: read-only inspection of the headless optimization loop.
@@ -71,12 +71,13 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/que", "queue"), "/queue ");
   assert.equal(await h.complete("/wor", "workbench"), "/workbench ");
   assert.equal(await h.complete("/codeg", "codegraph"), "/codegraph ");
-  assert.equal(await h.complete("/cliproxyapi-r", "cliproxyapi-refresh"), "/cliproxyapi-refresh ");
+  assert.equal(await h.complete("/cliproxyapi-b", "cliproxyapi-bundle"), "/cliproxyapi-bundle ");
+  assert.equal(await h.complete("/cliproxyapi re", "refresh"), "/cliproxyapi refresh", "the provider's own subcommands");
   assert.equal(await h.complete("/oh-", "oh-my-pi"), "/oh-my-pi ");
   assert.equal(await h.complete("/eval-l", "eval-loop"), "/eval-loop ");
 
   // Arguments: the chosen value replaces everything after the command, nested choices included.
-  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use", "oh-my-pi", "eval-loop"]) {
+  for (const name of ["browser", "orche", "commit", "bus", "queue", "gui", "workbench", "codegraph", "images", "cliproxyapi", "cliproxyapi-bundle", "computer-use", "oh-my-pi", "eval-loop"]) {
     assert.equal(typeof h.registered.find(command => command.name === name)?.getArgumentCompletions, "function", `/${name} completes arguments`);
   }
   assert.equal(await h.complete("/browser engine c", "engine chrome"), "/browser engine chrome");
@@ -95,7 +96,7 @@ test("bundled extension commands are listed and complete in Pi's slash-command a
   assert.equal(await h.complete("/codegraph sy", "sync"), "/codegraph sync");
   assert.equal(await h.complete("/codegraph i", "init"), "/codegraph init");
   // Every package's dependency subcommands, and the umbrella's batch commands with package ids.
-  for (const command of ["browser", "orche", "commit", "bus", "gui", "workbench", "codegraph", "images", "cliproxyapi", "computer-use"]) {
+  for (const command of ["browser", "orche", "commit", "bus", "gui", "workbench", "codegraph", "images", "cliproxyapi-bundle", "computer-use"]) {
     assert.equal(await h.complete(`/${command} doc`, "doctor"), `/${command} doctor`, `/${command} doctor`);
     assert.equal(await h.complete(`/${command} install-d`, "install-deps"), `/${command} install-deps`, `/${command} install-deps`);
   }
