@@ -42,3 +42,7 @@
 	path = pi-eval-loop
 	url = https://github.com/zmfkzj/pi-eval-loop.git
 	branch = main
+[submodule "pi-skillcache"]
+	path = pi-skillcache
+	url = https://github.com/zmfkzj/pi-skillcache.git
+	branch = main

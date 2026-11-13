@@ -1,6 +1,6 @@
 # oh-my-pi-extensions
 
-Twelve bundled packages for Pi:
+Thirteen bundled packages for Pi:
 
 - **[pi-tmp/](https://github.com/zmfkzj/pi-tmp)** — git submodule that points Pi's temporary directory (`TMPDIR`, `os.tmpdir()`, child processes) at a private on-disk directory, `/var/tmp/pi-${USER}` (or `$PI_TMP_DIR`), instead of a RAM-backed `/tmp` whose per-user tmpfs quota can make writes fail with `EDQUOT`. It is the manifest's first extension, so the packages after it (orche scratch, the CLIProxyAPI provider's patched-module cache, bash tool output files) already see the new directory when their modules load. It has no dependencies and no command (not part of `/oh-my-pi`).
 - **[orche/](https://github.com/zmfkzj/pi-orche)** — git submodule for multi-agent orchestration.
@@ -11,6 +11,7 @@ Twelve bundled packages for Pi:
 - **[session-bus/](https://github.com/zmfkzj/pi-session-bus)** — git submodule that lets separate local Pi sessions exchange messages over Unix sockets and wake each other.
 - **[images/](https://github.com/zmfkzj/pi-images)** — git submodule with the CLIProxyAPI image provider and a `generate_image` tool that shows results inline and takes file paths or attached images as references.
 - **[pi-workbench/](https://github.com/zmfkzj/pi-workbench)** — git submodule with on-demand `wb-*` skill routes (requirements, game, analysis, vision AI, manufacturing, coding, promo, research) and the `/workbench` profile command; the research profile bundles [Research Agent Skills](https://github.com/KalarisLabs/research-agent-skills) (MIT).
+- **[pi-skillcache/](https://github.com/zmfkzj/pi-skillcache)** — Git submodule for opt-in, bounded, read-only capsule replay and metadata-only trace counts (`/skillcache`). Experimental prototype, not the paper's automatic one-trace compiler. No model provider changes.
 - **[codegraph/](https://github.com/zmfkzj/pi-codegraph)** — git submodule that connects [CodeGraph](https://github.com/colbymchenry/codegraph)'s MCP server (`codegraph_explore`: source, call paths and blast radius in one call) through Pi's built-in MCP, adds `/codegraph status|init|sync`, and gives every orche worker and sub-worker its own CodeGraph connection (`codegraph` worker capability, read-only roles included). Needs the `codegraph` CLI (not bundled) and a per-project index (`/codegraph init`); an existing `codegraph` entry in `mcp.json` keeps precedence and is what workers use too.
 - **[cliproxyapi/](https://github.com/zmfkzj/pi-cliproxyapi-bundle)** — git submodule that loads the CLIProxyAPI model provider [pi-cliproxyapi-provider](https://github.com/0xRichardH/pi-cliproxyapi-provider) by 0xRichardH (its own npm dependency, pinned by its `package-lock.json`: provider id `cpa` by default, models discovered from CLIProxyAPI's `/v1/models` with models.dev metadata, `/cliproxyapi config|status|refresh|aliases|models`), and skips it when the same package is also installed on its own in your settings, so it never loads twice. It replaces the former `@router-for-me/pi-cliproxyapi-provider`, whose `cliproxyapi/<model>` ids, `cliproxyapi.json` and `/login CLIProxyAPI` are not carried over ([migration](https://github.com/zmfkzj/pi-cliproxyapi-bundle#migrating-from-the-former-provider)). Needs a running CLIProxyAPI and its key.
 - **[pi-eval-loop/](https://github.com/zmfkzj/pi-eval-loop)** — git submodule with a headless, resumable, quality-first optimization loop for the pi-orche harness (`npm run eval:loop`, `/eval-loop status|report|doctor`). It runs sandboxed real-model evaluations of orche candidates against the sibling `orche/` checkout. Adoption moves local refs only.
@@ -25,7 +26,7 @@ Local checkout:
 git clone --recurse-submodules https://github.com/zmfkzj/oh-my-pi-extensions.git
 cd oh-my-pi-extensions && npm install --legacy-peer-deps
 pi install /path/to/oh-my-pi-extensions
-# Or try all twelve without saving:
+# Or try all thirteen without saving:
 pi -e /path/to/oh-my-pi-extensions
 ```
 
@@ -49,6 +50,7 @@ pi install git:github.com/zmfkzj/pi-session-bus
 pi install npm:@amaster.ai/pi-computer-use
 pi install git:github.com/zmfkzj/pi-gui
 pi install git:github.com/zmfkzj/pi-workbench
+pi install git:github.com/zmfkzj/pi-skillcache
 pi install git:github.com/zmfkzj/pi-codegraph
 pi install git:github.com/zmfkzj/pi-cliproxyapi-bundle
 pi install npm:pi-cliproxyapi-provider   # the provider alone; pi-cliproxyapi-bundle then loads nothing
@@ -63,7 +65,7 @@ Every bundled package except pi-tmp (nothing to install or check) has two subcom
 /oh-my-pi install-deps [package...]   # install what can be installed, report the rest as manual steps
 ```
 
-Package ids: `orche`, `browser`, `computer-use`, `pi-gui`, `pi-commit`, `session-bus`, `images`, `pi-workbench`, `codegraph`, `cliproxyapi` (Tab completes them). The report has one section per package (`[id] label: outcome  (its own command)`), each item marked `[ok]`, `[installed]`, `[warn]` (optional feature), `[error]`, `[failed]`, `[manual]` or `[unverified]`, a `->` action under every abnormal item, and a summary line (`10 packages: 6 healthy, 1 abnormal, ...`) plus the list of packages that need attention. Packages are checked concurrently with a 60 s limit each, and installed one after another with a 15 min limit each; a package that throws, times out or is not loaded is reported as such, and the others' results still appear. `install-deps` ends with "run /reload" when something was installed.
+Package ids: `orche`, `browser`, `computer-use`, `pi-gui`, `pi-commit`, `session-bus`, `images`, `pi-workbench`, `pi-skillcache`, `codegraph`, `cliproxyapi` (Tab completes them). The report has one section per package (`[id] label: outcome  (its own command)`), each item marked `[ok]`, `[installed]`, `[warn]` (optional feature), `[error]`, `[failed]`, `[manual]` or `[unverified]`, a `->` action under every abnormal item, and a summary line (`10 packages: 6 healthy, 1 abnormal, ...`) plus the list of packages that need attention. Packages are checked concurrently with a 60 s limit each, and installed one after another with a 15 min limit each; a package that throws, times out or is not loaded is reported as such, and the others' results still appear. `install-deps` ends with "run /reload" when something was installed.
 
 | Package | Own commands | doctor checks | install-deps installs automatically | Reported as manual |
 |---|---|---|---|---|
@@ -75,6 +77,7 @@ Package ids: `orche`, `browser`, `computer-use`, `pi-gui`, `pi-commit`, `session
 | session-bus | `/bus doctor`, `/bus install-deps` | POSIX sockets, bus directory and permissions, socket path length, receiving mode, optional git for `/queue` | nothing (no external packages) | Windows (unsupported), directory fixes |
 | images | `/images doctor`, `/images install-deps` | image model settings, CLIProxyAPI base URL, credentials (set/not set), gateway reachability (3 s); inside herdr, herdr's pi integration (terminal images in herdr-web-ui) | nothing | CLIProxyAPI server and key, `herdr integration install pi` |
 | pi-workbench | `/workbench doctor`, `/workbench install-deps` | bundled catalog/skills; optional skill tools and API-key variables (presence only) | `ast-grep` (`npm install -g @ast-grep/cli` only with a user-writable npm prefix), `uv` (`pipx install uv` only with pipx) | system tools, API keys, Python modules |
+| pi-skillcache | `/skillcache doctor`, `/skillcache install-deps` | Node.js and passive capsule runtime | nothing (no external dependencies) | capsule review and explicit replay remain manual |
 | codegraph | `/codegraph doctor`, `/codegraph install-deps` | `mcp.json` entry, CodeGraph CLI and version, the project index (optional) | a missing CLI on Linux/macOS through upstream's `install.sh` (user-level, no sudo); never upgrades | Windows, permission errors, `/codegraph init` |
 | cliproxyapi | `/cliproxyapi-bundle doctor`, `/cliproxyapi-bundle install-deps` (also when the bundle loads nothing; `/cliproxyapi` is the provider's own command) | which provider install is active, the bundled npm package against its lock, provider id, base URL, key (set/not set), former-provider config and login left behind, server reachability | the bundled provider package | CLIProxyAPI server, `/login <provider id>`, migration from the former provider |
 
@@ -107,7 +110,7 @@ git pull && git submodule update --init --remote
 
 Alternatively, after `git pull`, rerun `npm install --legacy-peer-deps` to bootstrap the umbrella's recorded commits and missing dependencies. Bootstrap only syncs clean, detached submodules; branch checkouts or dirty worktrees are left untouched.
 
-The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-tmp, pi-commit, session-bus, pi-gui, pi-workbench, images, codegraph, cliproxyapi and pi-eval-loop; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
+The GitHub Actions workflow updates submodules to their configured branches (`master` for orche/browser, `main` for pi-tmp, pi-commit, session-bus, pi-gui, pi-workbench, pi-skillcache, images, codegraph, cliproxyapi and pi-eval-loop; the pi-images provider is bundled by orche) hourly (at minute 17), or on manual dispatch. Child repos can trigger it immediately via `repository_dispatch` with event type `submodule-updated` using a PAT; that PAT/child-repo setup is not configured yet.
 
 The CLIProxyAPI provider has its own update path: the `cliproxyapi/` submodule's repository (`zmfkzj/pi-cliproxyapi-bundle`) checks npm every 6 hours, updates its `package.json` and `package-lock.json` to a newer `pi-cliproxyapi-provider` release, and commits that to `main` only after its typecheck and tests (including a Pi loader test) pass; the hourly workflow above then picks up the new gitlink. A separately installed provider (`npm:pi-cliproxyapi-provider` in your settings) is updated by `pi update --extensions` instead. The CodeGraph CLI behind `codegraph/` is never updated by these packages: use `codegraph upgrade` (see [pi-codegraph](https://github.com/zmfkzj/pi-codegraph#versions-and-updates)).
 

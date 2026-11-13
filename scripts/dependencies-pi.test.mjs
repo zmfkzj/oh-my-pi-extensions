@@ -21,7 +21,7 @@ test("every bundled package answers the umbrella, and /oh-my-pi doctor and each 
   assert.ok(dependencies, "the dependencies extension is loaded");
   // Pi's loader passes one event bus to every extension (DefaultResourceLoader.eventBus).
   const { providers, duplicates } = collectProviders(h.loader.eventBus);
-  assert.deepEqual([...providers.keys()].sort(), PACKAGES.map(pkg => pkg.id).sort(), "all ten packages answer");
+  assert.deepEqual([...providers.keys()].sort(), PACKAGES.map(pkg => pkg.id).sort(), "all eleven packages answer");
   for (const pkg of PACKAGES) {
     assert.equal(providers.get(pkg.id).label, pkg.label, pkg.id);
     assert.equal(providers.get(pkg.id).command, pkg.command, pkg.id);
@@ -31,7 +31,7 @@ test("every bundled package answers the umbrella, and /oh-my-pi doctor and each 
   // The batch command: one section per package, none "not loaded", each item with a status and abnormal ones with an action.
   await h.session.prompt("/oh-my-pi doctor");
   const batch = h.notifications.at(-1);
-  assert.match(batch.message, /^\/oh-my-pi doctor: 10 packages: /);
+  assert.match(batch.message, /^\/oh-my-pi doctor: 11 packages: /);
   assert.doesNotMatch(batch.message.split("\n")[0], /not loaded/, batch.message);
   for (const pkg of PACKAGES) assert.match(batch.message, new RegExp(`^\\[${pkg.id}\\] ${pkg.label}: `, "m"), pkg.id);
   const lines = batch.message.split("\n");
