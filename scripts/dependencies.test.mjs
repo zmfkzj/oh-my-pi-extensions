@@ -44,7 +44,7 @@ test("the package table is the root manifest's extensions, the dependencies, pi-
   const aside = ["./extensions/dependencies/index.js", "./pi-tmp/index.js", "./pi-eval-loop/extension/index.js"];
   assert.deepEqual(PACKAGES.map(pkg => pkg.entry), manifest.pi.extensions.filter(path => !aside.includes(path)));
   for (const entry of aside) assert.ok(manifest.pi.extensions.includes(entry), entry);
-  assert.equal(new Set(PACKAGES.map(pkg => pkg.id)).size, 10);
+  assert.equal(new Set(PACKAGES.map(pkg => pkg.id)).size, 11);
 });
 
 test("collectProviders takes synchronous answers, keeps the first of an id and counts duplicates", () => {
@@ -151,7 +151,7 @@ test("install-deps: runs packages one at a time, installs an absent package's np
 
 test("/oh-my-pi parses packages, completes, and runs through the command with progress cleared", async () => {
   assert.deepEqual(parseUmbrellaArgs(""), { kind: "help" });
-  assert.equal(parseUmbrellaArgs("doctor").packages.length, 10);
+  assert.equal(parseUmbrellaArgs("doctor").packages.length, 11);
   assert.deepEqual(parseUmbrellaArgs("install-deps browser orche").packages.map(pkg => pkg.id), ["orche", "browser"]);
   assert.match(parseUmbrellaArgs("doctor nope").message, /Unknown package nope/);
   assert.match(parseUmbrellaArgs("fix").message, /Unknown subcommand fix/);
@@ -168,7 +168,7 @@ test("/oh-my-pi parses packages, completes, and runs through the command with pr
   await pi.commands.get("oh-my-pi").handler("doctor", ctx);
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].level, "info");
-  assert.match(notifications[0].message, /10 packages: 10 healthy/);
+  assert.match(notifications[0].message, /11 packages: 11 healthy/);
   assert.deepEqual(statuses.at(-1), ["oh-my-pi", undefined]);
   await pi.commands.get("oh-my-pi").handler("doctor xyz", ctx);
   assert.equal(notifications.at(-1).level, "warning");
@@ -313,9 +313,9 @@ test("the dependencies extension answers for computer-use and registers /compute
   await pi.commands.get("computer-use").handler("", ctx);
   assert.match(notifications.at(-1).message, /Usage: \/computer-use doctor \| install-deps/);
   assert.deepEqual(pi.commands.get("computer-use").getArgumentCompletions("in").map(item => item.value), ["install-deps"]);
-  // Batch run: computer-use answered, the nine absent packages of this fixture root are reported as not loaded.
+  // Batch run: computer-use answered, the ten absent packages of this fixture root are reported as not loaded.
   await pi.commands.get("oh-my-pi").handler("doctor", ctx);
-  assert.match(notifications.at(-1).message, /10 packages: 1 unverified, 9 not loaded/);
+  assert.match(notifications.at(-1).message, /11 packages: 1 unverified, 10 not loaded/);
 });
 
 test("registerComputerUseCommand clears its status line when install throws", async () => {

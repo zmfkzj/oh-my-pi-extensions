@@ -23,6 +23,7 @@ export const PACKAGES = Object.freeze([
   { id: "session-bus", label: "pi-session-bus", command: "/bus", entry: "./session-bus/src/index.ts", dir: "session-bus" },
   { id: "images", label: "pi-gateway-images", command: "/images", entry: "./images/src/index.ts", dir: "images" },
   { id: "pi-workbench", label: "pi-workbench", command: "/workbench", entry: "./pi-workbench/index.js", dir: "pi-workbench" },
+  { id: "pi-skillcache", label: "pi-skillcache", command: "/skillcache", entry: "./pi-skillcache/index.js", dir: "pi-skillcache" },
   { id: "codegraph", label: "pi-codegraph", command: "/codegraph", entry: "./codegraph/src/index.ts", dir: "codegraph" },
   { id: "cliproxyapi", label: "pi-cliproxyapi-bundle", command: "/cliproxyapi-bundle", entry: "./cliproxyapi/src/index.ts", dir: "cliproxyapi" },
 ]);
