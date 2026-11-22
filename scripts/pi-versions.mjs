@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packages = ["orche", "browser", "pi-gui", "pi-commit", "session-bus", "images", "codegraph", "cliproxyapi"];
 const json = path => JSON.parse(readFileSync(path, "utf8"));
-export function checkPiVersions(expected = "1.5.2") {
+export function checkPiVersions(expected = "1.6.0") {
   const evidence = [];
   for (const sub of packages) {
     const dir = join(root, sub), manifest = json(join(dir, "package.json"));
