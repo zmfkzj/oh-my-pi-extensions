@@ -17,7 +17,7 @@
     "@amaster.ai/pi-computer-use": "^0.1.22"
   },
   "pi": {
-    "skills": ["./browser/skills", "./pi-gui/node_modules/@mirsella/opencode-computer-use-mcp/skills", "./pi-workbench/skills"],
+    "skills": ["./browser/skills", "./pi-gui/skills", "./session-bus/skills", "./pi-workbench/skills"],
     "extensions": [
       "./pi-tmp/index.js",
       "./orche/src/extension/index.ts",

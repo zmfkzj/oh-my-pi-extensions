@@ -51,11 +51,13 @@ export default async function(pi) {
     if (transition === "new") await h.runtime.newSession();
     if (transition !== "startup") await exited(before);
     h.respond(ai => [call(ai, "mcp__computer_use__list_desktop", { scope: "windows" }), call(ai, "mcp__codegraph__codegraph_explore", { query: "local" }),
-      call(ai, "mcp__computer_use__act", {}), ai.fauxAssistantMessage("done")]);
-    await h.session.prompt("Use both worker capabilities, then attempt forbidden act.");
+      call(ai, "mcp__computer_use__act", {}), call(ai, "mcp__computer_use__list_desktop", { desktop: "foreground" }), ai.fauxAssistantMessage("done")]);
+    await h.session.prompt("Use both worker capabilities, act on the private desktop, then attempt the forbidden physical desktop.");
     const errors = h.session.messages.filter(m => m.role === "toolResult" && m.isError);
-    assert.match(JSON.stringify(errors.at(-1)), /read-only/);
-    assert.ok(!entries(log).some(e => e.event === "call:act"), "read-only GUI policy blocks before stdio");
+    assert.match(JSON.stringify(errors.at(-1)), /desktop \\"foreground\\" is not available/);
+    // A read-only role acts on its own private desktop (pi-gui 1-b); the physical desktop stays refused before stdio.
+    assert.ok(entries(log).some(e => e.event === "call:act"), "read-only GUI policy lets act reach the private desktop");
+    assert.equal(entries(log).filter(e => e.event === "call:list_desktop").length, entries(log).filter(e => e.event === "call:act").length, "the foreground list_desktop never reached stdio");
     const active = entries(log).filter(e => e.event === "spawn" && alive(e.pid));
     assert.deepEqual(active.map(e => e.server).sort(), ["codegraph", "computer_use"]);
     for (const child of active) assert.equal(entries(log).filter(e => e.event === "initialize" && e.pid === child.pid).length, 1);
